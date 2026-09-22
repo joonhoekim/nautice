@@ -128,13 +128,21 @@ banner_show() {
       # 문구를 AppleScript 문자열 리터럴에 끼워 넣지 않는다. 따옴표와 역슬래시를
       # 일일이 이스케이프해야 하고 한 군데만 새도 스크립트가 다른 뜻이 된다.
       # argv 로 넘기면 이스케이프가 아예 필요 없다.
+      #
+      # --hold 는 여기서 아무 일도 안 한다. 배너로 뜰지 알림으로 뜰지는 시스템
+      # 설정 > 알림의 앱별 스타일이 정하는 사용자 설정이라 display notification
+      # 으로는 못 바꾼다 — docs/cli.md 의 플랫폼 차이에 적어 뒀다.
       osascript - "$text" nautice <<'AS' >/dev/null
 on run argv
   display notification (item 1 of argv) with title (item 2 of argv)
 end run
 AS
       ;;
-    linux) notify-send -- nautice "$text" ;;
+    # -t 0 은 "만료 없음" 이지만 힌트일 뿐이라 데몬이 무시할 수 있다 (GNOME
+    # Shell 이 그렇다). --hold 를 보장하는 OS 는 Windows 뿐이다 — docs/cli.md 참고.
+    linux)
+      if [[ $OPT_HOLD == 1 ]]; then notify-send -t 0 -- nautice "$text"
+      else                          notify-send -- nautice "$text"; fi ;;
   esac
 }
 
@@ -332,6 +340,7 @@ print_plan() {
   printf 'gap=%.3f\n' "$OPT_GAP"
   printf 'tone=%s\n' "$tone"
   printf 'channel=%s\n' "$CHANNEL"
+  printf 'hold=%s\n' "$OPT_HOLD"
   printf 'text=%s\n' "$text"
   printf 'lang=%s\n' "$lang"
   printf 'backend=%s\n' "$PLATFORM"
@@ -516,6 +525,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
   -t, --tone NAME    alert/call 의 효과음  (기본 ask)
   -c, --channel NAME sound | visual | both (기본 sound)
+      --hold         배너를 지울 때까지 띄워 둔다 (시각 채널에만)
   -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
   -g, --gap SEC      반복 사이 간격        (기본 0.4)
   -a, --async        기다리지 않고 반환 (훅에서 필수)
@@ -535,7 +545,7 @@ USAGE
 
 # ── 인자 ────────────────────────────────────────────────────────────────────
 OPT_VOICE='' OPT_VOL='' OPT_RATE='' OPT_TONE='' OPT_CHANNEL=''
-OPT_REPEAT=1 OPT_GAP=0.4 OPT_QUIET=0 OPT_ASYNC=0 OPT_PLAN=0
+OPT_REPEAT=1 OPT_GAP=0.4 OPT_QUIET=0 OPT_ASYNC=0 OPT_HOLD=0 OPT_PLAN=0
 CMD_NAME=''
 REPEAT_GIVEN=0
 ARGS=()
@@ -578,6 +588,7 @@ while (($#)); do
     -g|--gap)    need_val "$@"; OPT_GAP=$2;   shift 2 ;;
     -a|--async)  OPT_ASYNC=1;  shift ;;
     -q|--quiet)  OPT_QUIET=1;  shift ;;
+    --hold)      OPT_HOLD=1;   shift ;;
     --plan)      OPT_PLAN=1;   shift ;;
     -h|--help)   usage; exit 0 ;;
     --version)   echo "nautice $VERSION"; exit 0 ;;
@@ -608,6 +619,7 @@ detach() {
   [[ -n $OPT_RATE  ]] && args+=(--rate  "$OPT_RATE")
   [[ -n $OPT_TONE  ]] && args+=(--tone  "$OPT_TONE")
   args+=(--channel "$CHANNEL")
+  [[ $OPT_HOLD == 1 ]] && args+=(--hold)
   [[ $REPEAT_GIVEN == 1 ]] && args+=(--repeat "$OPT_REPEAT")
   args+=(--gap "$OPT_GAP" --quiet --)
   nohup "$0" "${args[@]}" "$@" >/dev/null 2>&1 &

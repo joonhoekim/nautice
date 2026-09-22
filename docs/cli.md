@@ -28,6 +28,7 @@
 | `-r, --rate N` | `1.0` | **배속.** 1.0 = 보통, 1.5 = 1.5배 빠름 |
 | `-t, --tone NAME` | `ask` | `alert` / `call` 이 쓸 효과음 |
 | `-c, --channel NAME` | `sound` | `sound` / `visual` / `both`. `play` 는 `sound` 만 |
+| `--hold` | off | 배너를 지울 때까지 띄워 둔다. 시각 채널에만 걸린다 |
 | `-n, --repeat N` | `1` | **정수** 1 – 20. `call` 만 기본 2 |
 | `-g, --gap SEC` | `0.4` | 반복 사이 간격 |
 | `-a, --async` | off | 기다리지 않고 반환. 훅에서 필수 |
@@ -65,14 +66,27 @@ OS 마다 달라 맞댈 수 없으므로, 두 구현의 판정이 같은지는 �
 `play` 는 문구가 없어 배너에 적을 것이 없다. `play --channel visual` 과
 `play --channel both` 는 1 로 죽는다.
 
+#### `--hold`
+
+배너는 기본적으로 잠깐 떴다가 저절로 사라진다. `--hold` 를 주면 **사람이 지울
+때까지** 남는다. 자리를 비운 사이에 온 알림을 놓치지 않으려는 것이다.
+
+소리 채널에는 걸리지 않는다. `--channel sound` 에 `--hold` 를 줘도 띄울 배너가
+없으므로 아무 일도 하지 않는다 — 1 로 죽이지 않는 것은 `NAUTICE_CHANNEL` 을
+기계마다 다르게 두고 같은 명령을 쓰는 경우를 막지 않으려는 것이다.
+
+**지속 표시를 보장하는 OS 는 Windows 뿐이다.** 나머지는 백엔드가 받아주는
+만큼만 한다 — 아래 "플랫폼 차이" 에 적었다.
+
 | | 배너 백엔드 | 받을 것 |
 |---|---|---|
 | macOS | `osascript` 의 `display notification` | 없다 (내장) |
 | Linux | `notify-send` | `libnotify` 와 알림 데몬 |
 | Windows | `System.Windows.Forms.NotifyIcon` 의 벌룬 | 없다 (내장) |
 
-`--plan` 은 고른 채널을 `channel` 로, 그 OS 의 배너 백엔드를 `backend_visual` 로
-찍는다.
+`--plan` 은 고른 채널을 `channel` 로, `--hold` 여부를 `hold`(`0` / `1`) 로, 그 OS 의
+배너 백엔드를 `backend_visual` 로 찍는다. `--hold` 는 백엔드를 바꾸기도 하므로
+(Windows) `backend_visual` 이 같이 달라질 수 있다.
 
 ### 단위를 왜 이렇게 정했나
 
@@ -136,6 +150,21 @@ Windows SAPI 의 `Rate` 는 −10 – 10 이고 속도는 대략 `3^(Rate/10)` �
   `-a` 로 떼어내므로 이 차이가 보이지 않는다.
 - **Windows 배너는 데스크톱 세션이 필요하다** — 서비스나 헤드리스 세션에서는
   트레이가 없어 벌룬이 뜨지 않는다.
+- **`--hold` 가 지키는 정도가 OS 마다 다르다** — Windows 만 보장한다.
+  - Windows: `NotifyIcon` 벌룬은 시간이 지나면 사라지므로 `--hold` 일 때만
+    WinRT 토스트(`scenario="reminder"`)로 바꿔 띄운다. 사람이 지울 때까지 남고
+    프로세스가 끝나도 살아남는다 (자식 종료 10초 뒤에도 알림 센터에 있는 것을
+    실측). 그래서 이때는 위의 "배너의 수명" 제약과 2초 붙잡기가 없다.
+  - Linux: `notify-send -t 0` 으로 넘긴다. 만료 없음은 **힌트일 뿐**이라
+    데몬이 무시할 수 있다 — GNOME Shell 이 그렇다.
+  - macOS: **아무 일도 안 한다.** `display notification` 이 배너로 뜰지 알림으로
+    뜰지는 시스템 설정 → 알림의 앱별 스타일이 정하는 사용자 설정이라 코드로
+    바꿀 수 없다. 지속 표시를 원하면 스크립트 편집기의 알림 스타일을 "알림"
+    으로 직접 바꿔야 한다.
+- **`--hold` 일 때 Windows 배너의 주인은 Windows PowerShell 이다** — WinRT 토스트는
+  등록된 AppUserModelID 가 있어야 떠서 Windows PowerShell 의 것을 빌려 쓴다.
+  알림 설정에서 그 앱 아래에 묶인다 — macOS 배너가 스크립트 편집기에 묶이는
+  것과 같은 종류다. `--hold` 없이 뜨는 `NotifyIcon` 벌룬에는 해당하지 않는다.
 - **이(Yi)·바이(Vai) 문자의 언어 판정** — bash 는 UTF-8 첫 바이트(EA–ED)로 한글을
   가린다. 그 범위에 U+A000–U+ABFF 도 들어가서 이·바이 문자를 한국어로 친다.
   Windows 는 음절 범위를 정확히 본다. 알림 문구에 섞일 일이 없다고 보고 받아들인

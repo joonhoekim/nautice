@@ -79,7 +79,7 @@ function ConvertTo-Int([string] $v, [string] $label) {
 function Parse-Args([string[]] $argv) {
     $o = @{
         Voice = ''; Vol = $null; Rate = $null; Tone = ''; Channel = ''
-        Repeat = 1; Gap = 0.4; Quiet = $false; Async = $false; Plan = $false; PlanName = ''
+        Repeat = 1; Gap = 0.4; Quiet = $false; Async = $false; Hold = $false; Plan = $false; PlanName = ''
         RepeatGiven = $false; Rest = @(); Command = ''
     }
     $rest = New-Object System.Collections.Generic.List[string]
@@ -101,6 +101,7 @@ function Parse-Args([string[]] $argv) {
             { $_ -ceq '-g' -or $_ -ceq '--gap'    } { $o.Gap   = ConvertTo-Num $argv[$i + 1] '--gap' }
             { $_ -ceq '-a' -or $_ -ceq '--async'  } { $o.Async = $true;  $needsValue = $false }
             { $_ -ceq '-q' -or $_ -ceq '--quiet'  } { $o.Quiet = $true;  $needsValue = $false }
+            { $_ -ceq '--hold' }                     { $o.Hold  = $true;  $needsValue = $false }
             { $_ -ceq '--plan' }                     { $o.Plan  = $true;  $needsValue = $false }
             { $_ -ceq '-h' -or $_ -ceq '--help'   } { Show-Usage; exit 0 }
             { $_ -ceq '--version' }                 { Write-Output "nautice $VERSION"; exit 0 }
@@ -146,8 +147,36 @@ function Test-Hangul([string] $text) { return $text -match '[가-힣]' }
 # 바로 끝나므로 이 대기가 없다 — docs/cli.md 의 플랫폼 차이에 적혀 있다.
 $BannerHoldMs = 2000
 
+# --hold 는 벌룬으로 못 한다. Win10 부터 벌룬은 OS 가 토스트로 바꿔 띄우는데 그
+# 수명은 OS 가 정해서 ShowBalloonTip 의 시간 인자가 무시된다. 사람이 지울 때까지
+# 남기려면 scenario="reminder" 토스트여야 하고, 그건 WinRT 로만 만든다.
+#
+# 토스트는 등록된 AppUserModelID 가 있어야 뜬다. 없는 ID 를 주면 예외도 없이
+# 아무것도 안 뜨므로, 모든 Windows 에 있는 Windows PowerShell 의 것을 빌린다.
+# 알림 설정에서 그 앱 아래로 묶이는 값을 치른다 — docs/cli.md 에 적어 뒀다.
+$ToastAumid = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+
+# reminder 는 액션이 하나도 없으면 무시되고 그냥 사라지는 토스트가 된다.
+function Show-HeldToast([string] $text) {
+    try {
+        [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
+    } catch { Die "--hold 에 필요한 WinRT 알림 API 를 못 불러왔다: $($_.Exception.Message)" }
+    $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
+    $doc.LoadXml(@"
+<toast scenario="reminder">
+  <visual><binding template="ToastGeneric"><text>nautice</text><text>$([Security.SecurityElement]::Escape($text))</text></binding></visual>
+  <actions><action content="확인" arguments="dismiss" activationType="system"/></actions>
+</toast>
+"@)
+    $toast = New-Object Windows.UI.Notifications.ToastNotification $doc
+    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($ToastAumid).Show($toast)
+}
+
 function New-Banner([hashtable] $o, [string] $text) {
     if ($o.Channel -ceq 'sound') { return $null }
+    # 토스트는 알림 플랫폼이 들고 있으므로 프로세스가 붙잡아 줄 필요가 없다.
+    if ($o.Hold) { Show-HeldToast $text; return $null }
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     $ni = New-Object System.Windows.Forms.NotifyIcon
@@ -266,12 +295,13 @@ function Write-Plan([hashtable] $o, [string] $cmd, [string] $tone, [string] $tex
     Write-Output ("gap={0:F3}" -f $o.Gap)
     Write-Output "tone=$tone"
     Write-Output "channel=$($o.Channel)"
+    Write-Output "hold=$(if ($o.Hold) { 1 } else { 0 })"
     Write-Output "text=$text"
     Write-Output "lang=$(if (Test-Hangul $text) { 'ko' } else { 'en' })"
     Write-Output "backend=windows"
     Write-Output "backend_rate=$(ConvertTo-SapiRate $rate)"
     Write-Output "backend_vol=$(ConvertTo-SapiVolume $vol)"
-    Write-Output "backend_visual=notifyicon"
+    Write-Output "backend_visual=$(if ($o.Hold) { 'toast' } else { 'notifyicon' })"
 }
 
 function Write-Status([hashtable] $o, [string] $line) {
@@ -428,6 +458,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
   -t, --tone NAME    alert/call 의 효과음  (기본 ask)
   -c, --channel NAME sound | visual | both (기본 sound)
+      --hold         배너를 지울 때까지 띄워 둔다 (시각 채널에만)
   -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
   -g, --gap SEC      반복 사이 간격        (기본 0.4)
   -a, --async        기다리지 않고 반환 (훅에서 필수)

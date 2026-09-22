@@ -11,7 +11,7 @@ BASH_IMPL=bin/nautice
 PS_IMPL=bin/nautice.ps1
 
 # OS 와 무관하게 같아야 하는 필드. voice 와 backend_* 는 플랫폼마다 다르다.
-SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|channel|text|lang)='
+SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|channel|hold|text|lang)='
 
 pass=0 fail=0
 ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; pass=$((pass + 1)); }
@@ -85,6 +85,11 @@ plan_case 'channel 기본 sound'  say "테스트 문구"
 plan_case 'channel visual'      say -c visual "테스트 문구"
 plan_case 'channel both'        alert -c both -t warn "디스크가 찼습니다"
 plan_case 'channel call both'   call --channel both
+plan_case 'hold 기본 꺼짐'      say -c visual "테스트 문구"
+plan_case 'hold 켜짐'           say -c visual --hold "테스트 문구"
+plan_case 'hold + both'         alert -c both --hold -t warn "디스크가 찼습니다"
+# 배너가 없으면 붙잡을 것도 없다. 1 로 죽이지 않고 조용히 무시하는 것이 계약이다.
+plan_case 'hold 는 sound 에서 무해' say --hold "테스트 문구"
 
 # 문구를 인자가 아니라 파이프로 받는 자리. Windows 는 콘솔 코드페이지로 디코드
 # 하면 한글이 쓰레기가 되므로 stdin 을 UTF-8 로 직접 읽는다 — 그게 살아 있는지
@@ -191,7 +196,7 @@ echo
 
 # ── 도움말이 계약의 옵션을 다 적고 있는가 ───────────────────────────────────
 echo "도움말이 계약의 옵션을 다 적는가"
-for opt in --voice --vol --rate --tone --channel --repeat --gap --async --quiet; do
+for opt in --voice --vol --rate --tone --channel --hold --repeat --gap --async --quiet; do
   miss=""
   (( have_bash )) && ! run_bash --help | grep -q -- "$opt" && miss="bash"
   (( have_ps ))   && ! run_ps   --help | grep -q -- "$opt" && miss="${miss:+$miss, }ps"

@@ -32,6 +32,14 @@ $VERSION = '0.4.0'
 # SAPI 의 Rate 는 -10..10 이고 속도는 대략 3^(Rate/10) 배다. 배속 1.0 이 Rate 0.
 $RateBase = 3
 
+# 없으면 빈 문자열. Get-Env 는 기본값을 인자로 먼저 계산하므로 언어별 이름처럼
+# 이름이 동적인 자리에는 이쪽을 쓴다.
+function Get-EnvOrEmpty($name) {
+    $v = [Environment]::GetEnvironmentVariable($name)
+    if ([string]::IsNullOrWhiteSpace($v)) { return '' }
+    return $v
+}
+
 function Get-Env($name, $fallback) {
     $v = [Environment]::GetEnvironmentVariable($name)
     if ([string]::IsNullOrWhiteSpace($v)) { return $fallback }
@@ -40,8 +48,7 @@ function Get-Env($name, $fallback) {
 
 $Defaults = @{
     Voice   = Get-Env 'NAUTICE_VOICE'   'auto'
-    VoiceKo = Get-Env 'NAUTICE_VOICE_KO' 'best'
-    VoiceEn = Get-Env 'NAUTICE_VOICE_EN' 'best'
+    Lang    = Get-Env 'NAUTICE_LANG' 'auto'
     Vol     = [double](Get-Env 'NAUTICE_VOL'  '0.6')
     Rate    = [double](Get-Env 'NAUTICE_RATE' '1.0')
     Channel = Get-Env 'NAUTICE_CHANNEL' 'sound'
@@ -59,7 +66,7 @@ function Die($msg) { [Console]::Error.WriteLine("nautice: $msg"); exit 1 }
 # 지키려면 $args 를 직접 훑어야 한다. -ceq 가 대소문자를 구분한다.
 $ValueOpts = @('-v', '--voice', '-V', '--vol', '-r', '--rate',
                '-t', '--tone', '-n', '--repeat', '-g', '--gap',
-               '-c', '--channel')
+               '-c', '--channel', '-l', '--lang')
 
 # [double] 캐스트를 그냥 쓰면 `-r abc` 가 .NET 의 변환 예외 스택을 사용자에게
 # 뱉는다. bash 쪽은 awk 가 범위를 재다 실패해 제 문구로 죽으므로 여기서 맞춘다.
@@ -81,6 +88,7 @@ function ConvertTo-Int([string] $v, [string] $label) {
 function Parse-Args([string[]] $argv) {
     $o = @{
         Voice = ''; Vol = $null; Rate = $null; Tone = ''; Channel = ''
+        Lang = ''
         Repeat = 1; Gap = 0.4; Quiet = $false; Async = $false; Hold = $false; Plan = $false; PlanName = ''
         RepeatGiven = $false; Rest = @(); Command = ''
     }
@@ -99,6 +107,7 @@ function Parse-Args([string[]] $argv) {
             { $_ -ceq '-r' -or $_ -ceq '--rate'   } { $o.Rate  = ConvertTo-Num $argv[$i + 1] '--rate' }
             { $_ -ceq '-t' -or $_ -ceq '--tone'   } { $o.Tone  = $argv[$i + 1] }
             { $_ -ceq '-c' -or $_ -ceq '--channel'} { $o.Channel = $argv[$i + 1] }
+            { $_ -ceq '-l' -or $_ -ceq '--lang'   } { $o.Lang    = $argv[$i + 1] }
             { $_ -ceq '-n' -or $_ -ceq '--repeat' } { $o.Repeat = ConvertTo-Int $argv[$i + 1] '--repeat'; $o.RepeatGiven = $true }
             { $_ -ceq '-g' -or $_ -ceq '--gap'    } { $o.Gap   = ConvertTo-Num $argv[$i + 1] '--gap' }
             { $_ -ceq '-a' -or $_ -ceq '--async'  } { $o.Async = $true;  $needsValue = $false }
@@ -140,7 +149,45 @@ function ConvertTo-SapiVolume([double] $vol) {
     return [int][Math]::Max(0, [Math]::Min(100, [Math]::Round($vol * 100)))
 }
 
-function Test-Hangul([string] $text) { return $text -match '[가-힣]' }
+# ── 언어 판정 ───────────────────────────────────────────────────────────────
+# 문자 계열이 곧 언어다. 순서가 곧 우선순위이고 docs/cli.md 의 표와 같아야 한다 —
+# 가나가 있으면 한자가 같이 있어도 일본어다. .NET 정규식의 범위는 UTF-16 코드
+# 단위를 그대로 비교하므로 문화권을 타지 않는다.
+$ScriptLangs = @(
+    @{ Lang = 'ko'; Re = '[\u00ac00-\u00d7a3]' }
+)
+# 위 해시테이블은 아래에서 실제 범위로 다시 만든다 (PowerShell 5.1 의 \u 는
+# 문자열 이스케이프가 아니라 정규식 쪽 문법이라 한 줄로 적으면 헷갈린다).
+$ScriptLangs = @(
+    @{ Lang = 'ko'; Re = '[\uAC00-\uD7A3]' }   # 한글 음절
+    @{ Lang = 'ja'; Re = '[\u3040-\u30FF]' }   # 가나
+    @{ Lang = 'zh'; Re = '[\u4E00-\u9FFF]' }   # 한자
+    @{ Lang = 'ru'; Re = '[\u0400-\u04FF]' }   # 키릴
+    @{ Lang = 'el'; Re = '[\u0370-\u03FF]' }   # 그리스
+    @{ Lang = 'ar'; Re = '[\u0600-\u06FF]' }   # 아랍
+    @{ Lang = 'he'; Re = '[\u0590-\u05FF]' }   # 히브리
+    @{ Lang = 'th'; Re = '[\u0E00-\u0E7F]' }   # 태국
+    @{ Lang = 'hi'; Re = '[\u0900-\u097F]' }   # 데바나가리
+)
+
+# 라틴 문자권 언어. 로캘이 이 안에 있을 때만 라틴 문구의 기본 언어로 쓴다 —
+# 한국어 로캘에서 영어 문구를 한국어 보이스가 읽는 일을 막는다.
+$LatinLangs = @(
+    'af','ca','cs','cy','da','de','en','es','et','eu','fi','fr','ga','gl','hr',
+    'hu','id','is','it','lt','lv','ms','nb','nl','nn','no','pl','pt','ro','sk',
+    'sl','sq','sv','sw','tl','tr','vi'
+)
+
+function Resolve-Lang([hashtable] $o, [string] $text) {
+    $want = if ($o.Lang) { $o.Lang } else { $Defaults.Lang }
+    if ($want -cne 'auto') { return $want }
+    foreach ($e in $ScriptLangs) { if ($text -match $e.Re) { return $e.Lang } }
+    # 라틴이다. 글에서는 못 가리므로 OS 로캘을 본다. 문화권은 Invariant 로
+    # 바꾸기 전에 붙잡아 둔 값이다.
+    $loc = $SystemCulture.TwoLetterISOLanguageName
+    if ($loc -and ($LatinLangs -contains $loc)) { return $loc }
+    return 'en'
+}
 
 # ── 시각 채널 (배너) ────────────────────────────────────────────────────────
 # NotifyIcon 의 벌룬은 프로세스가 트레이 아이콘을 잡고 있는 동안만 뜬다. 바로
@@ -228,7 +275,7 @@ function Resolve-Sfx([string] $name) {
 # ── TTS ─────────────────────────────────────────────────────────────────────
 # macOS 와 달리 SAPI 는 볼륨·속도를 합성 시점에 직접 받는다. 파일로 렌더할
 # 이유가 없어서 캐시를 쓰지 않는다 (docs/cli.md 의 플랫폼 차이 참고).
-function New-Synth([hashtable] $o, [string] $text) {
+function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
     Add-Type -AssemblyName System.Speech
     $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
     $synth.Rate = ConvertTo-SapiRate ([double](Coalesce $o.Rate $Defaults.Rate))
@@ -239,18 +286,22 @@ function New-Synth([hashtable] $o, [string] $text) {
 
     $want = if ($o.Voice) { $o.Voice } else { $Defaults.Voice }
     if ($want -eq 'auto' -or $want -eq 'best') {
-        # Windows 는 품질 등급을 노출하지 않는다. best 는 auto 와 같다.
-        $want = if (Test-Hangul $text) { $Defaults.VoiceKo } else { $Defaults.VoiceEn }
-        if ($want -eq 'auto' -or $want -eq 'best') { $want = '' }
+        # NAUTICE_VOICE_KO 처럼 언어별로 못박은 이름이 있으면 그것.
+        $want = Get-EnvOrEmpty "NAUTICE_VOICE_$($lang.ToUpper())"
     }
+    # Windows 는 품질 등급을 노출하지 않는다. best 는 auto 와 같다.
+    if ($want -eq 'auto' -or $want -eq 'best') { $want = '' }
 
     $pick = $null
     if ($want) {
         $pick = $installed | Where-Object { $_.Name -like "*$want*" } | Select-Object -First 1
         if (-not $pick) { Die "그런 보이스가 없다: $want (nautice list voices)" }
     }
-    if (-not $pick -and (Test-Hangul $text)) {
-        $pick = $installed | Where-Object { $_.Culture.Name -eq 'ko-KR' } | Select-Object -First 1
+    # 그 언어의 음성으로. 없으면 죽이지 않고 로캘·아무거나로 떨어진다 — 알림
+    # 도구라 억양이 틀린 알림이 알림 없음보다 낫다 (docs/cli.md). Windows 는
+    # 설치된 언어팩의 음성만 보여서 이 자리가 제일 자주 걸린다.
+    if (-not $pick) {
+        $pick = $installed | Where-Object { $_.Culture.TwoLetterISOLanguageName -eq $lang } | Select-Object -First 1
     }
     if (-not $pick) {
         $pick = $installed | Where-Object { $_.Culture.Name -eq $SystemCulture.Name } | Select-Object -First 1
@@ -299,7 +350,7 @@ function Write-Plan([hashtable] $o, [string] $cmd, [string] $tone, [string] $tex
     Write-Output "channel=$($o.Channel)"
     Write-Output "hold=$(if ($o.Hold) { 1 } else { 0 })"
     Write-Output "text=$text"
-    Write-Output "lang=$(if (Test-Hangul $text) { 'ko' } else { 'en' })"
+    Write-Output "lang=$(Resolve-Lang $o $text)"
     Write-Output "backend=windows"
     Write-Output "backend_rate=$(ConvertTo-SapiRate $rate)"
     Write-Output "backend_vol=$(ConvertTo-SapiVolume $vol)"
@@ -330,7 +381,7 @@ function Invoke-Say([hashtable] $o) {
     if ($o.Plan) { Write-Plan $o 'say' '' $text; return }
     $banner = New-Banner $o $text
     if ($o.Channel -ceq 'visual') { Write-Status $o 'say 배너만'; Close-Banner $banner; return }
-    $synth = New-Synth $o $text
+    $synth = New-Synth $o $text (Resolve-Lang $o $text)
     try {
         Write-Status $o "say x$($o.Repeat) [$($synth.Voice.Name)]$(Get-ChanNote $o)"
         Invoke-Emit $o '' $synth $text
@@ -356,7 +407,7 @@ function Invoke-Alert([hashtable] $o) {
     $banner = New-Banner $o $text
     if ($o.Channel -ceq 'visual') { Write-Status $o "$($o.PlanName) 배너만"; Close-Banner $banner; return }
     $chime = Resolve-Sfx $tone
-    $synth = New-Synth $o $text
+    $synth = New-Synth $o $text (Resolve-Lang $o $text)
     try {
         Write-Status $o "alert x$($o.Repeat) [$($synth.Voice.Name)]$(Get-ChanNote $o)"
         Invoke-Emit $o $chime $synth $text
@@ -419,6 +470,10 @@ function Invoke-Doctor([hashtable] $o) {
         } else {
             Write-Output ("  {0,-11} 없음 — 설정 > 시간 및 언어 > 음성 에서 한국어 음성을 추가하라" -f '한국어')
         }
+        # 없는 언어는 다른 음성으로 떨어지는데 -q 를 쓰는 훅에서는 그 사실이
+        # 안 보인다 (docs/cli.md). 여기서 미리 밝힌다.
+        $langs = @($voices | ForEach-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName } | Sort-Object -Unique)
+        Write-Output ("  {0,-11} {1}" -f '보이스 언어', ($langs -join ' '))
     } catch {
         Write-Output ("  {0,-11} System.Speech 를 못 불러왔다: {1}" -f 'TTS', $_.Exception.Message)
         $ok = 1
@@ -460,6 +515,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
   -t, --tone NAME    alert/call 의 효과음  (기본 ask)
   -c, --channel NAME sound | visual | both (기본 sound)
+  -l, --lang CODE    두 글자 언어 코드     (기본 auto — 문구에서 가린다)
       --hold         배너를 지울 때까지 띄워 둔다 (시각 채널에만)
   -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
   -g, --gap SEC      반복 사이 간격        (기본 0.4)
@@ -484,6 +540,11 @@ Assert-Range $o.Vol    0   10 '--vol'
 Assert-Range $o.Rate   0.1 10 '--rate'
 Assert-Range $o.Repeat 1   20 '--repeat'
 Assert-Range $o.Gap    0   10 '--gap'
+
+if (-not $o.Lang) { $o.Lang = $Defaults.Lang }
+if ($o.Lang -cne 'auto' -and $o.Lang -notmatch '^[a-z]{2}$') {
+    Die "--lang 은 auto 이거나 두 글자 언어 코드다: $($o.Lang)"
+}
 
 if (-not $o.Channel) { $o.Channel = $Defaults.Channel }
 if ($o.Channel -cne 'sound' -and $o.Channel -cne 'visual' -and $o.Channel -cne 'both') {

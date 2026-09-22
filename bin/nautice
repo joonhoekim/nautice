@@ -15,8 +15,7 @@ VERSION=0.4.0
 
 : "${NAUTICE_CACHE:=${XDG_CACHE_HOME:-$HOME/.cache}/nautice}"
 : "${NAUTICE_VOICE:=auto}"
-: "${NAUTICE_VOICE_KO:=best}"
-: "${NAUTICE_VOICE_EN:=best}"
+: "${NAUTICE_LANG:=auto}"
 : "${NAUTICE_VOL:=0.6}"
 : "${NAUTICE_RATE:=1.0}"
 : "${NAUTICE_PIPER_MODEL:=}"
@@ -156,25 +155,68 @@ maybe_banner() {
 # 상태 줄에 배너를 같이 냈다는 것을 덧붙인다.
 chan_note() { [[ $CHANNEL == sound ]] || printf ' +배너'; }
 
-# ── 보이스 ──────────────────────────────────────────────────────────────────
-# 한글 음절(U+AC00–U+D7A3)은 UTF-8 에서 첫 바이트가 EA–ED 다. 이어지는 바이트는
-# 80–BF 라 겹치지 않으므로 바이트 하나만 봐도 된다.
+# ── 언어 판정 ───────────────────────────────────────────────────────────────
+# 문자 계열을 UTF-8 바이트로 가린다. 정규식 범위([가-힣])를 쓰지 않는 이유가
+# 둘이다. LC_CTYPE 이 C 면 그 대괄호가 모든 문자에 매치해서 영어 문장도 한국어
+# 보이스로 나간다 — cron·systemd·컨테이너처럼 로캘이 없는 환경에서 조용히
+# 그렇게 된다. 자모(ㄱ-ㅎ)까지 묶으면 en_US 콜레이션에서 정렬 순서가 코드포인트
+# 순서와 달라 "invalid character range" 로 죽는다. 바이트로 보면 둘 다 안 생긴다.
 #
-# 정규식 [가-힣] 을 쓰지 않는 이유가 둘이다. LC_CTYPE 이 C 면 그 대괄호가 모든
-# 문자에 매치해서 영어 문장도 한국어 보이스로 나간다 — cron·systemd·컨테이너처럼
-# 로캘이 없는 환경에서 조용히 그렇게 된다. 자모(ㄱ-ㅎ)까지 묶으면 en_US
-# 콜레이션에서 정렬 순서가 코드포인트 순서와 달라 "invalid character range" 로
-# 죽는다. 바이트로 보면 둘 다 안 생긴다.
+# hex 를 한 덩어리로 붙이면 안 된다. 앞 바이트의 끝자리와 뒷 바이트의 첫자리가
+# 맞닿아 없는 값이 생긴다 — "Renée" 는 6e c3 라서 "…6ec3…" 안에 ec 가 보이고,
+# 영어 문장이 한국어 보이스로 나갔다. 바이트마다 줄을 끊어 awk 로 짚는다.
 #
-# EA–ED 는 U+A000–U+DFFF 이라 이(Yi)·바이(Vai) 문자도 한글로 친다. 그 글자들이
-# 알림 문구에 섞일 일은 없다고 보고 받아들인다 — docs/cli.md 의 플랫폼 차이에 적혀 있다.
-#
-# hex 를 한 덩어리로 붙이면 안 된다. 앞 바이트의 끝자리 e 와 뒷 바이트의 첫자리
-# a–d 가 맞닿아 매치한다 — "Renée" 는 6e c3 라서 "…6ec3…" 안에 ec 가 생기고,
-# 영어 문장이 한국어 보이스로 나간다. 소리는 나므로 귀로도 놓친다. 바이트마다
-# 줄을 끊고 -qx 로 줄 전체를 맞춘다. od 가 같은 줄을 * 로 접지 않도록 -v 를 준다.
-has_hangul() { printf '%s' "$1" | od -An -tx1 -v | tr ' ' '\n' | grep -qxE 'e[a-d]'; }
+# 두 번째 바이트까지 보는 것은 범위를 유니코드 표와 정확히 맞추기 위해서다
+# (docs/cli.md 의 표). 첫 바이트만 보면 EA 가 이(Yi) 문자까지 한글로 친다.
+# awk 는 strtonum 이 없는 구현이 있어(BSD awk) 16진수 문자열을 그대로 비교한다 —
+# 두 자리 소문자로 0 채움이라 사전순 비교가 곧 수 비교다.
+detect_lang() {
+  printf '%s' "$1" | od -An -tx1 -v | tr ' ' '\n' | grep -v '^$' | awk '
+    { n++; h[n] = $1 }
+    END {
+      for (i = 1; i <= n; i++) {
+        a = h[i]; b = (i < n) ? h[i + 1] : "00"
+        if ((a == "ea" && b >= "b0") || a == "eb" || a == "ec" || (a == "ed" && b <= "9e")) ko = 1
+        else if (a == "e3" && b >= "81" && b <= "83") ja = 1
+        else if ((a == "e4" && b >= "b8") || (a >= "e5" && a <= "e9")) zh = 1
+        else if (a >= "d0" && a <= "d3") ru = 1
+        else if ((a == "cd" && b >= "b0") || a == "ce" || a == "cf") el = 1
+        else if (a >= "d8" && a <= "db") ar = 1
+        else if ((a == "d6" && b >= "90") || a == "d7") he = 1
+        else if (a == "e0" && b >= "b8" && b <= "b9") th = 1
+        else if (a == "e0" && b >= "a4" && b <= "a5") hi = 1
+      }
+      # 섞이면 이 순서가 이긴다 (docs/cli.md 의 표 순서).
+      if (ko) print "ko"; else if (ja) print "ja"; else if (zh) print "zh"
+      else if (ru) print "ru"; else if (el) print "el"; else if (ar) print "ar"
+      else if (he) print "he"; else if (th) print "th"; else if (hi) print "hi"
+      else print ""
+    }'
+}
 
+# 라틴 문자권 언어 목록. 로캘이 이 안에 있을 때만 라틴 문구의 기본 언어로 쓴다 —
+# 한국어 로캘에서 영어 문구를 한국어 보이스가 읽는 일을 막는다.
+LATIN_LANGS=" af ca cs cy da de en es et eu fi fr ga gl hr hu id is it lt lv ms nb nl nn no pl pt ro sk sl sq sv sw tl tr vi "
+
+# 로캘에서 두 글자 언어 코드를 꺼낸다. cron·systemd·컨테이너에는 아예 없다.
+locale_lang() {
+  local l=${LC_MESSAGES:-${LANG:-}}
+  l=${l%%.*}; l=${l%%_*}; l=${l%%@*}
+  [[ $l =~ ^[a-z]{2}$ ]] || return 1
+  printf '%s' "$l"
+}
+
+resolve_lang() {
+  local text=$1 l=${OPT_LANG:-$NAUTICE_LANG}
+  if [[ $l != auto ]]; then printf '%s' "$l"; return; fi
+  l=$(detect_lang "$text")
+  if [[ -n $l ]]; then printf '%s' "$l"; return; fi
+  # 라틴이다. 글에서는 못 가리므로 로캘을 본다.
+  l=$(locale_lang) || l=''
+  if [[ -n $l && $LATIN_LANGS == *" $l "* ]]; then printf '%s' "$l"; else printf 'en'; fi
+}
+
+# ── 보이스 ──────────────────────────────────────────────────────────────────
 # macOS: say -v '?' 는 0.5s 걸린다. 한 번만 부르고 "이름<TAB>언어" 로 캐시에 적는다.
 # 이름 자체에 공백과 괄호가 들어가므로 (`Jian (Premium)`,
 # `Eddy (Korean (South Korea))`) 공백으로 자르면 안 된다 — 로케일 코드가
@@ -186,13 +228,13 @@ voice_table() {
     case $PLATFORM in
       macos)
         say -v '?' \
-          | sed -E -n 's/^(.*[^[:space:]])[[:space:]]+([a-z]{2})_[A-Z]{2}[[:space:]]+#.*$/\1\t\2/p' \
+          | sed -E -n 's/^(.*[^[:space:]])[[:space:]]+([a-z]{2})_[A-Z0-9]{2,3}[[:space:]]+#.*$/\1\t\2/p' \
           > "$f" ;;
       linux)
         # espeak-ng --voices 는 "Pty Language Age/Gender VoiceName File Other"
         if command -v espeak-ng >/dev/null 2>&1; then
           espeak-ng --voices 2>/dev/null \
-            | awk 'NR > 1 { print $4 "\t" substr($2, 1, 2) }' > "$f"
+            | awk 'NR > 1 { c = $2; sub(/-.*/, "", c); print $4 "\t" c }' > "$f"
         else
           : > "$f"
         fi ;;
@@ -207,36 +249,70 @@ voice_list() { voice_table | awk -F'\t' -v l="$1" '$2 == l { print $1 }'; }
 # 이름에 오타가 나면 알림이 엉뚱한 목소리로 나가는데 아무 표시가 없다.
 voice_exists() { voice_table | cut -f1 | grep -qxF "$1"; }
 
+# macOS 가 그 언어의 기본으로 쓰는 이름. 단서가 이것뿐이라 표로 든다.
+# say 는 -v 를 빼면 언어를 안 가리고 시스템 보이스로 읽는다 — 일본어 문구가
+# 0.5초에 끝난다 (Kyoko 로는 1.26초). 그렇다고 목록의 첫 이름을 집으면 en 에서
+# novelty 보이스(Albert·Bad News·Bahh…)가 잡힌다. 품질 등급이 없는 언어에서
+# 제정신인 기본값을 고르려면 이 이름이 있어야 한다.
+default_voice_name() {
+  case $1 in
+    ko) printf Yuna ;;     ja) printf Kyoko ;;    zh) printf Tingting ;;
+    en) printf Samantha ;; de) printf Anna ;;     fr) printf Thomas ;;
+    es) printf Monica ;;   it) printf Alice ;;    pt) printf Luciana ;;
+    ru) printf Milena ;;   ar) printf Majed ;;    he) printf Carmit ;;
+    th) printf Kanya ;;    hi) printf Lekha ;;    el) printf Melina ;;
+    tr) printf Yelda ;;    nl) printf Xander ;;   sv) printf Alva ;;
+    da) printf Sara ;;     fi) printf Satu ;;     pl) printf Zosia ;;
+    cs) printf Zuzana ;;   *)  printf '' ;;
+  esac
+}
+
 # 고품질 보이스는 ~/Library/Speech/Voices 가 아니라 MobileAsset 저장소로 들어간다.
 # 디렉터리로는 확인할 수 없고 say 목록의 (Premium)/(Enhanced) 꼬리표가 유일한 단서다.
 # 해석 결과를 캐시에 적는다 — 보이스를 새로 받았으면 nautice cache clear 로 비운다.
+# 그 언어의 보이스 하나를 고른다. 없으면 빈 값 — 부르는 쪽이 떨어질 곳을 정한다.
 best_voice() {
-  local lang=$1 fallback=$2 names v="" pat
+  local lang=$1 names v="" pat
   local f="$NAUTICE_CACHE/.voice-$lang"
   if [[ -s $f ]]; then cat "$f"; return; fi
+  local fb; fb=$(default_voice_name "$lang")
   names=$(voice_list "$lang") || true
-  for pat in "$fallback (Premium)" "(Premium)" "$fallback (Enhanced)" "(Enhanced)" "$fallback"; do
+  [[ -z ${names// } ]] && return 1
+  for pat in "$fb (Premium)" "(Premium)" "$fb (Enhanced)" "(Enhanced)" "$fb"; do
     [[ -n $v ]] && break
     v=$(printf '%s\n' "$names" | grep -m1 -F "$pat" || true)
   done
   [[ -z $v ]] && v=$(printf '%s\n' "$names" | head -1)
-  [[ -z ${v// } ]] && die "$lang 보이스를 하나도 못 찾았다 (nautice list voices)"
+  [[ -z ${v// } ]] && return 1
   mkdir -p "$NAUTICE_CACHE"; printf '%s' "$v" > "$f"
   printf '%s' "$v"
 }
 
+# NAUTICE_VOICE_KO 처럼 언어별로 못박은 이름을 꺼낸다. 대문자 변환에 ${v^^} 를
+# 쓰지 않는다 — macOS 의 bash 3.2 에는 없다.
+lang_voice_env() {
+  local n; n=$(printf 'NAUTICE_VOICE_%s' "$1" | tr '[:lower:]' '[:upper:]')
+  eval "printf '%s' \"\${$n:-}\""
+}
+
 resolve_voice() {
-  local text=$1 v=${OPT_VOICE:-$NAUTICE_VOICE} lang fb
-  if has_hangul "$text"; then lang=ko; fb=Yuna; else lang=en; fb=Samantha; fi
+  local lang=$1 v=${OPT_VOICE:-$NAUTICE_VOICE} named
   if [[ $v == auto ]]; then
-    if [[ $lang == ko ]]; then v=$NAUTICE_VOICE_KO; else v=$NAUTICE_VOICE_EN; fi
+    named=$(lang_voice_env "$lang")
+    [[ -n $named ]] && v=$named || v=best
   fi
   # Linux 는 품질 등급이 없다. espeak-ng 는 언어 코드를 그대로 보이스로 받는다.
   if [[ $PLATFORM == linux ]]; then
     [[ $v == best || $v == auto ]] && v=$lang
     printf '%s' "$v"; return
   fi
-  [[ $v == best ]] && v=$(best_voice "$lang" "$fb")
+  if [[ $v == best ]]; then
+    # 그 언어 보이스가 없으면 죽이지 않고 로캘·영어로 떨어진다. 알림 도구라
+    # 억양이 틀린 알림이 알림 없음보다 낫다 (docs/cli.md).
+    v=$(best_voice "$lang") || v=$(best_voice en) || v=$(voice_table | cut -f1 | head -1)
+    [[ -z ${v// } ]] && die "보이스를 하나도 못 찾았다 (nautice list voices)"
+    printf '%s' "$v"; return
+  fi
   voice_exists "$v" || die "그런 보이스가 없다: $v (nautice list voices)"
   printf '%s' "$v"
 }
@@ -331,7 +407,7 @@ emit() {
 # 이게 없으면 한글 감지가 두 구현에서 갈라져도 테스트가 못 본다.
 print_plan() {
   local cmd=$1 voice=$2 tone=$3 text=$4 lang
-  if has_hangul "$text"; then lang=ko; else lang=en; fi
+  lang=$(resolve_lang "$text")
   printf 'command=%s\n' "$cmd"
   printf 'voice_req=%s\n' "${OPT_VOICE:-$NAUTICE_VOICE}"
   printf 'voice=%s\n' "$voice"
@@ -362,12 +438,12 @@ cmd_say() {
   local text voice speech
   text=$(read_text "$@")
   if [[ $OPT_PLAN == 1 ]]; then
-    voice=$(resolve_voice "$text" 2>/dev/null) || voice=''
+    voice=$(resolve_voice "$(resolve_lang "$text")" 2>/dev/null) || voice=''
     print_plan say "$voice" '' "$text"; return 0
   fi
   maybe_banner "$text"
   if [[ $CHANNEL == visual ]]; then say_status "say 배너만"; return 0; fi
-  voice=$(resolve_voice "$text")
+  voice=$(resolve_voice "$(resolve_lang "$text")")
   speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
   say_status "say x$OPT_REPEAT [$voice]$(chan_note)"
   with_lock emit "" "$speech"
@@ -389,12 +465,12 @@ cmd_alert() {
   : "${CMD_NAME:=alert}"
   text=$(read_text "$@")
   if [[ $OPT_PLAN == 1 ]]; then
-    voice=$(resolve_voice "$text" 2>/dev/null) || voice=''
+    voice=$(resolve_voice "$(resolve_lang "$text")" 2>/dev/null) || voice=''
     print_plan "$CMD_NAME" "$voice" "${OPT_TONE:-ask}" "$text"; return 0
   fi
   maybe_banner "$text"
   if [[ $CHANNEL == visual ]]; then say_status "$CMD_NAME 배너만"; return 0; fi
-  voice=$(resolve_voice "$text")
+  voice=$(resolve_voice "$(resolve_lang "$text")")
   speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
   chime=$(sfx_resolve "${OPT_TONE:-ask}")
   say_status "alert x$OPT_REPEAT [$voice]$(chan_note)"
@@ -483,9 +559,11 @@ cmd_doctor() {
   # --plan 과 같은 서식으로 찍는다. %s 로 그냥 흘리면 NAUTICE_RATE=1.0 이 한쪽은
   # "1.0", 다른 쪽은 "1" 로 나와 같은 기본값이 달라 보인다.
   printf '  %s vol=%.3f rate=%.3f\n' '기본값      ' "$NAUTICE_VOL" "$NAUTICE_RATE"
+  # 어느 언어에 보이스가 있는지 밝힌다. 없는 언어는 다른 보이스로 떨어지는데
+  # -q 를 쓰는 훅에서는 그 사실이 안 보인다 (docs/cli.md).
+  printf '  %s %s\n' '보이스 언어 ' "$(voice_table | cut -f2 | sort -u | tr '\n' ' ')"
 
   if [[ $PLATFORM == macos ]]; then
-    printf '  %s ko=%s  en=%s\n' '해석 보이스 ' "$(best_voice ko Yuna)" "$(best_voice en Samantha)"
     # compact/eloquence 는 저용량 온디바이스 합성이다. 알림으로 쓸 만한 품질은
     # 시스템 설정 > 손쉬운 사용 > 음성 콘텐츠 > 시스템 음성 > 음성 관리 에서
     # 받는 (Premium) / (Enhanced) 쪽이다.
@@ -527,6 +605,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
   -t, --tone NAME    alert/call 의 효과음  (기본 ask)
   -c, --channel NAME sound | visual | both (기본 sound)
+  -l, --lang CODE    두 글자 언어 코드     (기본 auto — 문구에서 가린다)
       --hold         배너를 지울 때까지 띄워 둔다 (시각 채널에만)
   -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
   -g, --gap SEC      반복 사이 간격        (기본 0.4)
@@ -546,7 +625,7 @@ USAGE
 }
 
 # ── 인자 ────────────────────────────────────────────────────────────────────
-OPT_VOICE='' OPT_VOL='' OPT_RATE='' OPT_TONE='' OPT_CHANNEL=''
+OPT_VOICE='' OPT_VOL='' OPT_RATE='' OPT_TONE='' OPT_CHANNEL='' OPT_LANG=''
 OPT_REPEAT=1 OPT_GAP=0.4 OPT_QUIET=0 OPT_ASYNC=0 OPT_HOLD=0 OPT_PLAN=0
 CMD_NAME=''
 REPEAT_GIVEN=0
@@ -586,6 +665,7 @@ while (($#)); do
     -r|--rate)   need_val "$@"; OPT_RATE=$2;  shift 2 ;;
     -t|--tone)   need_val "$@"; OPT_TONE=$2;  shift 2 ;;
     -c|--channel) need_val "$@"; OPT_CHANNEL=$2; shift 2 ;;
+    -l|--lang)   need_val "$@"; OPT_LANG=$2;   shift 2 ;;
     -n|--repeat) need_val "$@"; OPT_REPEAT=$2; REPEAT_GIVEN=1; shift 2 ;;
     -g|--gap)    need_val "$@"; OPT_GAP=$2;   shift 2 ;;
     -a|--async)  OPT_ASYNC=1;  shift ;;
@@ -606,6 +686,10 @@ set -- "${ARGS[@]:-}"
 check_int --repeat "$OPT_REPEAT" 1 20
 check_num --gap    "$OPT_GAP"    0 10
 
+LANG_REQ=${OPT_LANG:-$NAUTICE_LANG}
+[[ $LANG_REQ == auto || $LANG_REQ =~ ^[a-z]{2}$ ]] \
+  || die "--lang 은 auto 이거나 두 글자 언어 코드다: $LANG_REQ"
+
 CHANNEL=${OPT_CHANNEL:-$NAUTICE_CHANNEL}
 case $CHANNEL in
   sound|visual|both) ;;
@@ -621,6 +705,7 @@ detach() {
   [[ -n $OPT_RATE  ]] && args+=(--rate  "$OPT_RATE")
   [[ -n $OPT_TONE  ]] && args+=(--tone  "$OPT_TONE")
   args+=(--channel "$CHANNEL")
+  [[ -n $OPT_LANG ]] && args+=(--lang "$OPT_LANG")
   [[ $OPT_HOLD == 1 ]] && args+=(--hold)
   [[ $REPEAT_GIVEN == 1 ]] && args+=(--repeat "$OPT_REPEAT")
   args+=(--gap "$OPT_GAP" --quiet --)

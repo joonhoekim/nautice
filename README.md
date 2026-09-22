@@ -27,7 +27,7 @@ nautice say -c visual "빌드 끝"       # 배너만
 | 속도 | wpm / −10–10 / wpm 제각각 | `-r 1.5` 배속, 구현이 환산 |
 | 동시 호출 | 섞여서 뭉개짐 | 락으로 직렬화 (bash 쪽) |
 | 반복 문장 | 매번 재합성 | 해시 캐시 (bash 쪽) |
-| 보이스 | 이름을 직접 알아야 함 | 한글이면 한국어, macOS 는 최고 품질 자동 |
+| 보이스 | 이름을 직접 알아야 함 | 문구의 문자로 언어를 가려 고른다 (ko·ja·zh·ru·ar…) |
 | 효과음 | OS 마다 목록도 이름도 다름 | 같은 파일을 번들로 — 알림의 뜻이 안 흔들린다 |
 | 훅에서 호출 | 재생 끝까지 블록 | `-a` 로 즉시 반환 |
 | 시각 알림 | osascript / notify-send / 토스트 제각각 | `-c both`, 세 OS 한 옵션 |
@@ -113,8 +113,9 @@ nix profile remove nautice                         # 지우기
 받아두면 `nautice` 가 알아서 고른다 — 같은 품질이면 `NAUTICE_VOICE_KO` 에 적은
 이름을 먼저 본다. 받은 직후에는 `nautice cache clear` 로 해석 결과를 비운다.
 
-**Windows** 는 ko-KR 음성(Heami 등)을 자동으로 고른다. 품질 등급은 노출되지
-않아서 `best` 가 `auto` 와 같다.
+**Windows** 는 설치된 언어팩의 음성만 보인다 — 그 언어가 없으면 다른 음성으로
+떨어진다. 품질 등급은 노출되지 않아서 `best` 가 `auto` 와 같다.
+`nautice doctor` 의 "보이스 언어" 줄이 무엇이 있는지 알려준다.
 
 **Linux 는 한국어가 약하다.** `espeak-ng` 는 포먼트 합성이라 거칠고, `piper` 의
 공식 보이스에는 쓸 만한 한국어가 없다. 모델을 따로 구했으면
@@ -258,9 +259,11 @@ nix build .#nautice    # shellcheck 까지 돈다
 - **보이스 검증** — `say` 는 모르는 보이스를 받아도 exit 0 으로 기본 보이스를 써서
   조용히 읽는다. 오타가 나면 엉뚱한 목소리로 나가는데 표시가 없어서, 목록에
   있는지 먼저 확인하고 없으면 죽는다.
-- **한글 감지** — 정규식이 아니라 UTF-8 바이트(EA–ED)로 본다. `LC_CTYPE` 이 `C` 면
-  `[가-힣]` 이 모든 문자에 매치해서 영어 문장도 한국어로 나가고, 자모까지 묶으면
-  en_US 콜레이션에서 죽는다. 판정 결과는 `--plan` 의 `lang` 으로 드러난다.
+- **언어 판정** — 문구의 문자 계열이 언어다. 한글·가나·한자·키릴·그리스·아랍·
+  히브리·태국·데바나가리를 가린다. 라틴 문자는 글에서 언어를 알 수 없으므로 OS
+  로캘을 쓰고, 로캘이 없거나 비라틴권이면 `en` 이다. `--lang` 으로 못박는다.
+  bash 쪽은 정규식이 아니라 UTF-8 바이트로 본다 — `LC_CTYPE` 이 `C` 면 `[가-힣]`
+  이 모든 문자에 매치해서 영어 문장도 한국어로 나간다.
 - **배너** — `--channel` 로 켠다. `--repeat` 을 따르지 않고 한 번만 뜬다 — 같은
   배너가 알림 센터에 쌓이면 읽을 수 없다. 백엔드가 0 을 냈다고 배너가 떴다는
   뜻은 아니다: 알림 권한이 없거나 집중 모드면 조용히 눌린다. macOS 에서는
@@ -270,7 +273,7 @@ nix build .#nautice    # shellcheck 까지 돈다
 
 ## 환경변수
 
-`NAUTICE_VOICE` `NAUTICE_VOICE_KO` `NAUTICE_VOICE_EN` `NAUTICE_VOL` `NAUTICE_RATE`
+`NAUTICE_VOICE` `NAUTICE_VOICE_<언어>` `NAUTICE_LANG` `NAUTICE_VOL` `NAUTICE_RATE`
 `NAUTICE_CHANNEL` `NAUTICE_CALL_MESSAGE` `NAUTICE_CACHE` `NAUTICE_SOUNDS`
 `NAUTICE_PIPER_MODEL`
 

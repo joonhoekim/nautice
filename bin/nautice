@@ -477,7 +477,7 @@ cmd_list() {
         for f in /System/Library/Sounds/*.aiff; do printf '  %s\n' "$(basename "$f" .aiff)"; done
       fi ;;
     voices)
-      for lang in ko en; do
+      for lang in $(voice_table | cut -f2 | sort -u); do
         printf '%s:\n' "$lang"
         voice_list "$lang" | sed 's/^/  /'
       done ;;

@@ -17,8 +17,8 @@
 | `nautice play <이름\|경로>` | 효과음을 낸다 |
 | `nautice alert <문구>` | 효과음 뒤에 문구를 읽는다 |
 | `nautice call [문구]` | 사람을 부른다. `alert` + 기본문구 + `--repeat 2` |
-| `nautice list [voices\|sounds]` | 목록 |
-| `nautice doctor` | 환경 점검. 정상이면 0 |
+| `nautice list [voices\|sounds]` | 효과음 목록, 또는 모든 언어의 보이스를 언어별로 |
+| `nautice doctor` | 환경 점검. 보이스가 있는 언어도 밝힌다. 정상이면 0 |
 | `nautice cache [info\|clear]` | 렌더 캐시 |
 
 `call` 의 기본 문구는 `에이전트가 부릅니다` 다. 이 도구는 특정 에이전트에

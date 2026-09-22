@@ -16,8 +16,8 @@ single source of truth; never change only one implementation —
 | `nautice play <name\|path>` | Plays a sound effect |
 | `nautice alert <text>` | Plays a sound, then speaks the text |
 | `nautice call [text]` | Calls the human: `alert` + default text + `--repeat 2` |
-| `nautice list [voices\|sounds]` | Lists voices or sounds |
-| `nautice doctor` | Checks the environment; 0 when healthy |
+| `nautice list [voices\|sounds]` | Lists sounds, or voices for every language grouped by language |
+| `nautice doctor` | Checks the environment and lists the languages that have a voice; 0 when healthy |
 | `nautice cache [info\|clear]` | Render cache |
 
 `call` speaks `에이전트가 부릅니다` by default ("the agent is calling"). The

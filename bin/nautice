@@ -1,0 +1,506 @@
+#!/usr/bin/env bash
+# nautice — 에이전트가 사람의 주의를 끄는 알림 CLI (macOS · Linux).
+# Windows 구현은 bin/nautice.ps1 에 있다. 동작 계약은 docs/cli.md 가 단일 출처다.
+set -euo pipefail
+
+VERSION=0.2.0
+
+: "${NAUTICE_CACHE:=${XDG_CACHE_HOME:-$HOME/.cache}/nautice}"
+: "${NAUTICE_VOICE:=auto}"
+: "${NAUTICE_VOICE_KO:=best}"
+: "${NAUTICE_VOICE_EN:=best}"
+: "${NAUTICE_VOL:=0.6}"
+: "${NAUTICE_RATE:=1.0}"
+: "${NAUTICE_PIPER_MODEL:=}"
+
+# 부를 때마다 두 번 반복하므로 짧아야 한다. 긴 문구를 쓰면 call 하나가 10초를 넘는다.
+CALL_MESSAGE='클로드가 부릅니다'
+# say 와 espeak-ng 의 보통 속도. 배속 1.0 이 이 값이다 — macOS 에서 실측하면
+# `say -r 175` 와 -r 를 안 준 자연 속도가 같은 길이로 나온다 (Yuna Premium, 2.53s).
+BASE_WPM=175
+LOCK="$NAUTICE_CACHE/.lock"
+LOCK_TIMEOUT=30
+
+die() { printf 'nautice: %s\n' "$*" >&2; exit 1; }
+
+# shasum 은 macOS 에 늘 있지만 최소 설치된 Linux(debian:stable-slim 등)에는 없다 —
+# 거기서는 sha1sum 이다. 해시는 캐시 키로만 쓰므로 어느 구현이든 상관없다.
+hash_stdin() {
+  if   command -v shasum  >/dev/null 2>&1; then shasum
+  elif command -v sha1sum >/dev/null 2>&1; then sha1sum
+  elif command -v md5sum  >/dev/null 2>&1; then md5sum
+  else die "해시 도구가 없다 (shasum / sha1sum / md5sum 중 하나가 필요하다)"
+  fi
+}
+say_status() { [[ $OPT_QUIET == 1 ]] || printf 'nautice: %s\n' "$*"; }
+
+# ── 번들 효과음 찾기 ────────────────────────────────────────────────────────
+# 레포에서 직접 실행할 때와 nix 로 설치했을 때 배치가 다르다. 심링크를 따라가야
+# nix profile 의 bin/nautice 에서도 share 를 찾는다.
+script_dir() {
+  local src=${BASH_SOURCE[0]} dir
+  while [[ -L $src ]]; do
+    dir=$(cd -P "$(dirname "$src")" && pwd)
+    src=$(readlink "$src")
+    [[ $src != /* ]] && src=$dir/$src
+  done
+  cd -P "$(dirname "$src")" && pwd
+}
+
+# Git Bash·MSYS 에서 `nautice` 를 부르면 여기로 온다. 이름 하나로 세 OS 를
+# 쓰려면 그쪽 구현으로 넘겨야 한다. WSL 은 Linux 로 보고되므로 넘기지 않는다.
+case "$(uname -s)" in
+  Darwin) PLATFORM=macos ;;
+  Linux)  PLATFORM=linux ;;
+  MINGW*|MSYS*|CYGWIN*)
+    exec powershell -NoProfile -ExecutionPolicy Bypass \
+      -File "$(script_dir)/nautice.ps1" "$@" ;;
+  *) die "이 스크립트는 macOS 와 Linux 용이다 ($(uname -s)). Windows 는 nautice.ps1 을 쓴다" ;;
+esac
+
+find_sounds() {
+  [[ -n ${NAUTICE_SOUNDS:-} ]] && { printf '%s' "$NAUTICE_SOUNDS"; return; }
+  local d; d=$(script_dir)
+  local c
+  for c in "$d/../share/sounds" "$d/../share/nautice/sounds"; do
+    [[ -d $c ]] && { cd -P "$c" && pwd; return; }
+  done
+  die "번들 효과음을 못 찾았다. NAUTICE_SOUNDS 로 경로를 지정하라"
+}
+
+# ── 오디오 재생 ─────────────────────────────────────────────────────────────
+# 재생기마다 볼륨 단위가 달라서 여기서 환산한다. 볼륨을 못 받는 재생기(aplay)는
+# 시스템 볼륨으로 난다 — 조용히 무시되므로 doctor 가 어느 재생기를 쓰는지 밝힌다.
+linux_player() {
+  local p
+  for p in pw-play paplay aplay ffplay mpv; do
+    command -v "$p" >/dev/null 2>&1 && { printf '%s' "$p"; return; }
+  done
+  return 1
+}
+
+# afplay 는 기동에만 약 0.95초를 쓴다 (0.43초 파일 재생에 1.38초, 3회 측정,
+# macOS 26 / M 계열). 짧은 알림음에서는 이 오버헤드가 소리 길이보다 크다.
+# 훅에서는 --async 로 떼어내므로 보이지 않지만, 반복 횟수를 늘리면 그만큼 붙는다.
+audio_play() {
+  local file=$1 vol=${OPT_VOL:-$NAUTICE_VOL}
+  if [[ $PLATFORM == macos ]]; then
+    afplay -v "$vol" "$file"
+    return
+  fi
+  local p; p=$(linux_player) || die "재생기가 없다 (pw-play/paplay/aplay/ffplay/mpv 중 하나가 필요하다)"
+  case $p in
+    pw-play) pw-play --volume="$vol" "$file" ;;
+    paplay)  paplay --volume="$(awk -v v="$vol" 'BEGIN{printf "%d", v*65536}')" "$file" ;;
+    aplay)   aplay -q "$file" ;;
+    ffplay)  ffplay -nodisp -autoexit -loglevel quiet -volume \
+               "$(awk -v v="$vol" 'BEGIN{printf "%d", v*100}')" "$file" ;;
+    mpv)     mpv --really-quiet --volume="$(awk -v v="$vol" 'BEGIN{printf "%d", v*100}')" "$file" ;;
+  esac
+}
+
+# ── 보이스 ──────────────────────────────────────────────────────────────────
+has_hangul() { [[ $1 =~ [가-힣] ]]; }
+
+# macOS: say -v '?' 는 0.5s 걸린다. 한 번만 부르고 "이름<TAB>언어" 로 캐시에 적는다.
+# 이름 자체에 공백과 괄호가 들어가므로 (`Jian (Premium)`,
+# `Eddy (Korean (South Korea))`) 공백으로 자르면 안 된다 — 로케일 코드가
+# 이름 끝을 알려주는 유일한 표지다.
+voice_table() {
+  local f="$NAUTICE_CACHE/.voices"
+  if [[ ! -s $f ]]; then
+    mkdir -p "$NAUTICE_CACHE"
+    case $PLATFORM in
+      macos)
+        say -v '?' \
+          | sed -E -n 's/^(.*[^[:space:]])[[:space:]]+([a-z]{2})_[A-Z]{2}[[:space:]]+#.*$/\1\t\2/p' \
+          > "$f" ;;
+      linux)
+        # espeak-ng --voices 는 "Pty Language Age/Gender VoiceName File Other"
+        if command -v espeak-ng >/dev/null 2>&1; then
+          espeak-ng --voices 2>/dev/null \
+            | awk 'NR > 1 { print $4 "\t" substr($2, 1, 2) }' > "$f"
+        else
+          : > "$f"
+        fi ;;
+    esac
+  fi
+  cat "$f"
+}
+
+voice_list() { voice_table | awk -F'\t' -v l="$1" '$2 == l { print $1 }'; }
+
+# say 는 모르는 보이스를 받아도 exit 0 으로 기본 보이스를 써서 조용히 읽는다.
+# 이름에 오타가 나면 알림이 엉뚱한 목소리로 나가는데 아무 표시가 없다.
+voice_exists() { voice_table | cut -f1 | grep -qxF "$1"; }
+
+# 고품질 보이스는 ~/Library/Speech/Voices 가 아니라 MobileAsset 저장소로 들어간다.
+# 디렉터리로는 확인할 수 없고 say 목록의 (Premium)/(Enhanced) 꼬리표가 유일한 단서다.
+# 해석 결과를 캐시에 적는다 — 보이스를 새로 받았으면 nautice cache clear 로 비운다.
+best_voice() {
+  local lang=$1 fallback=$2 names v="" pat
+  local f="$NAUTICE_CACHE/.voice-$lang"
+  if [[ -s $f ]]; then cat "$f"; return; fi
+  names=$(voice_list "$lang") || true
+  for pat in "$fallback (Premium)" "(Premium)" "$fallback (Enhanced)" "(Enhanced)" "$fallback"; do
+    [[ -n $v ]] && break
+    v=$(printf '%s\n' "$names" | grep -m1 -F "$pat" || true)
+  done
+  [[ -z $v ]] && v=$(printf '%s\n' "$names" | head -1)
+  [[ -z ${v// } ]] && die "$lang 보이스를 하나도 못 찾았다 (nautice list voices)"
+  mkdir -p "$NAUTICE_CACHE"; printf '%s' "$v" > "$f"
+  printf '%s' "$v"
+}
+
+resolve_voice() {
+  local text=$1 v=${OPT_VOICE:-$NAUTICE_VOICE} lang fb
+  if has_hangul "$text"; then lang=ko; fb=Yuna; else lang=en; fb=Samantha; fi
+  if [[ $v == auto ]]; then
+    if [[ $lang == ko ]]; then v=$NAUTICE_VOICE_KO; else v=$NAUTICE_VOICE_EN; fi
+  fi
+  # Linux 는 품질 등급이 없다. espeak-ng 는 언어 코드를 그대로 보이스로 받는다.
+  if [[ $PLATFORM == linux ]]; then
+    [[ $v == best || $v == auto ]] && v=$lang
+    printf '%s' "$v"; return
+  fi
+  [[ $v == best ]] && v=$(best_voice "$lang" "$fb")
+  voice_exists "$v" || die "그런 보이스가 없다: $v (nautice list voices)"
+  printf '%s' "$v"
+}
+
+# ── TTS 렌더 ────────────────────────────────────────────────────────────────
+# say 에도 espeak-ng 에도 재생 볼륨 옵션이 없다. 어차피 파일로 렌더해야 하고,
+# 그 파일을 캐시하면 같은 문장의 재합성을 건너뛴다.
+wpm_for() { awk -v m="$1" -v b="$BASE_WPM" 'BEGIN { printf "%d", m * b }'; }
+
+tts_render() {
+  local voice=$1 rate=$2 text=$3 key path ext=aiff
+  [[ $PLATFORM == linux ]] && ext=wav
+  key=$(printf '%s|%s|%s|%s' "$PLATFORM" "$voice" "$rate" "$text" | hash_stdin | cut -d' ' -f1)
+  path="$NAUTICE_CACHE/$key.$ext"
+  if [[ ! -s $path ]]; then
+    mkdir -p "$NAUTICE_CACHE"
+    case $PLATFORM in
+      macos)
+        say -v "$voice" -r "$(wpm_for "$rate")" -o "$path.tmp" -- "$text" \
+          || die "say 실패 (보이스 '$voice')"
+        mv -f "$path.tmp" "$path" ;;
+      linux)
+        if [[ -n $NAUTICE_PIPER_MODEL ]]; then
+          command -v piper >/dev/null 2>&1 || die "NAUTICE_PIPER_MODEL 이 있는데 piper 가 없다"
+          printf '%s' "$text" | piper -m "$NAUTICE_PIPER_MODEL" -f "$path.tmp" >/dev/null 2>&1 \
+            || die "piper 실패 (모델: $NAUTICE_PIPER_MODEL)"
+        elif command -v espeak-ng >/dev/null 2>&1; then
+          espeak-ng -v "$voice" -s "$(wpm_for "$rate")" -w "$path.tmp" -- "$text" \
+            || die "espeak-ng 실패 (보이스 '$voice')"
+        else
+          die "TTS 백엔드가 없다 (espeak-ng 를 설치하거나 NAUTICE_PIPER_MODEL 을 지정하라)"
+        fi
+        mv -f "$path.tmp" "$path" ;;
+    esac
+  fi
+  printf '%s' "$path"
+}
+
+# ── 효과음 해석 ─────────────────────────────────────────────────────────────
+# 번들을 먼저 본다. 세 OS 가 같은 소리를 내야 알림의 뜻이 기계마다 안 흔들린다.
+sfx_resolve() {
+  local name=$1 sounds
+  [[ -f $name ]] && { printf '%s' "$name"; return; }
+  sounds=$(find_sounds)
+  [[ -f "$sounds/$name.wav" ]] && { printf '%s' "$sounds/$name.wav"; return; }
+  if [[ $PLATFORM == macos && -f "/System/Library/Sounds/$name.aiff" ]]; then
+    printf '%s' "/System/Library/Sounds/$name.aiff"; return
+  fi
+  die "그런 사운드가 없다: $name (nautice list sounds)"
+}
+
+# ── 큐 ──────────────────────────────────────────────────────────────────────
+# 재생이 겹치면 알림이 뭉개진다. 락을 재생 구간에만 건다 — 렌더는 병렬이어도 된다.
+# flock 이 없으면 mkdir 락으로 떨어진다. mkdir 락은 프로세스가 죽으면 남으므로
+# LOCK_TIMEOUT 이 지나면 포기하고 그냥 재생한다 — 겹쳐 들리는 편이 조용히
+# 알림을 잃는 것보다 낫다.
+with_lock() {
+  mkdir -p "$NAUTICE_CACHE"
+  if command -v flock >/dev/null 2>&1; then
+    ( flock -w "$LOCK_TIMEOUT" 9 || true; "$@" ) 9>"$LOCK"
+  else
+    local d="$LOCK.d" waited=0
+    while ! mkdir "$d" 2>/dev/null; do
+      sleep 0.1; waited=$((waited + 1))
+      (( waited > LOCK_TIMEOUT * 10 )) && break
+    done
+    trap 'rmdir "$d" 2>/dev/null || true' EXIT
+    "$@"
+    rmdir "$d" 2>/dev/null || true
+    trap - EXIT
+  fi
+}
+
+# ── 반복 ────────────────────────────────────────────────────────────────────
+# 한 번의 알림 단위(차임 / 발화 / 둘 다)를 --repeat 회 되풀이한다. 전체를 한
+# 락 안에 넣어야 반복 사이로 다른 알림이 끼어들지 않는다.
+emit() {
+  local chime=$1 speech=$2 i
+  for (( i = 1; i <= OPT_REPEAT; i++ )); do
+    [[ -n $chime  ]] && audio_play "$chime"
+    [[ -n $speech ]] && audio_play "$speech"
+    if (( i < OPT_REPEAT )); then
+      awk -v g="$OPT_GAP" 'BEGIN { exit !(g > 0) }' && sleep "$OPT_GAP"
+    fi
+  done
+  return 0
+}
+
+# 소리를 내지 않고 해석 결과만 찍는다. 앞쪽 블록은 OS 와 무관하게 같아야 하고,
+# backend_* 는 docs/cli.md 의 환산식대로 나와야 한다 — test/conformance 가 본다.
+print_plan() {
+  local cmd=$1 voice=$2 tone=$3 text=$4
+  printf 'command=%s\n' "$cmd"
+  printf 'voice_req=%s\n' "${OPT_VOICE:-$NAUTICE_VOICE}"
+  printf 'voice=%s\n' "$voice"
+  printf 'vol=%.3f\n' "${OPT_VOL:-$NAUTICE_VOL}"
+  printf 'rate=%.3f\n' "${OPT_RATE:-$NAUTICE_RATE}"
+  printf 'repeat=%d\n' "$OPT_REPEAT"
+  printf 'gap=%.3f\n' "$OPT_GAP"
+  printf 'tone=%s\n' "$tone"
+  printf 'text=%s\n' "$text"
+  printf 'backend=%s\n' "$PLATFORM"
+  printf 'backend_rate=%s\n' "$(wpm_for "${OPT_RATE:-$NAUTICE_RATE}")"
+  printf 'backend_vol=%.3f\n' "${OPT_VOL:-$NAUTICE_VOL}"
+}
+
+read_text() {
+  local text=$*
+  [[ -z $text && ! -t 0 ]] && text=$(cat)
+  [[ -z ${text// } ]] && die "말할 내용이 없다"
+  printf '%s' "$text"
+}
+
+# ── 명령 ────────────────────────────────────────────────────────────────────
+cmd_say() {
+  local text voice speech
+  text=$(read_text "$@")
+  if [[ $OPT_PLAN == 1 ]]; then
+    voice=$(resolve_voice "$text" 2>/dev/null) || voice=''
+    print_plan say "$voice" '' "$text"; return 0
+  fi
+  voice=$(resolve_voice "$text")
+  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
+  say_status "say x$OPT_REPEAT [$voice]"
+  with_lock emit "" "$speech"
+}
+
+cmd_play() {
+  local file
+  [[ $# -gt 0 && -n ${1:-} ]] || die "사운드 이름이나 경로가 필요하다 (nautice list sounds)"
+  file=$(sfx_resolve "$1")
+  [[ $OPT_PLAN == 1 ]] && { print_plan play '' "$1" ''; return 0; }
+  say_status "play x$OPT_REPEAT [$1]"
+  with_lock emit "$file" ""
+}
+
+cmd_alert() {
+  local text voice speech chime
+  : "${CMD_NAME:=alert}"
+  text=$(read_text "$@")
+  if [[ $OPT_PLAN == 1 ]]; then
+    voice=$(resolve_voice "$text" 2>/dev/null) || voice=''
+    print_plan "$CMD_NAME" "$voice" "${OPT_TONE:-ask}" "$text"; return 0
+  fi
+  voice=$(resolve_voice "$text")
+  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
+  chime=$(sfx_resolve "${OPT_TONE:-ask}")
+  say_status "alert x$OPT_REPEAT [$voice]"
+  with_lock emit "$chime" "$speech"
+}
+
+cmd_call() {
+  # 사람을 부르는 게 목적이라 한 번으로는 놓치기 쉽다. 따로 지정하지 않으면 두 번.
+  [[ $REPEAT_GIVEN == 0 ]] && OPT_REPEAT=2
+  CMD_NAME=call
+  local text=$*
+  [[ -z ${text// } ]] && text=$CALL_MESSAGE
+  cmd_alert "$text"
+}
+
+cmd_list() {
+  local what=${1:-all} sounds f lang
+  sounds=$(find_sounds)
+  case $what in
+    sounds)
+      echo "번들 (세 OS 공통):"
+      for f in "$sounds"/*.wav; do printf '  %s\n' "$(basename "$f" .wav)"; done
+      if [[ $PLATFORM == macos ]]; then
+        echo; echo "macOS 시스템 사운드:"
+        for f in /System/Library/Sounds/*.aiff; do printf '  %s\n' "$(basename "$f" .aiff)"; done
+      fi ;;
+    voices)
+      for lang in ko en; do
+        printf '%s:\n' "$lang"
+        voice_list "$lang" | sed 's/^/  /'
+      done ;;
+    all) cmd_list sounds; echo; cmd_list voices ;;
+    *) die "list 대상: voices | sounds | all" ;;
+  esac
+}
+
+cmd_doctor() {
+  local ok=0 t p
+  printf 'nautice %s (%s)\n\n' "$VERSION" "$PLATFORM"
+
+  if [[ $PLATFORM == macos ]]; then
+    for t in say afplay; do
+      if command -v "$t" >/dev/null; then printf '  %-12s %s\n' "$t" "$(command -v "$t")"
+      else printf '  %-12s 없음 (필수)\n' "$t"; ok=1; fi
+    done
+  else
+    if [[ -n $NAUTICE_PIPER_MODEL ]]; then
+      printf '  %-12s %s\n' TTS "piper ($NAUTICE_PIPER_MODEL)"
+      command -v piper >/dev/null || { printf '  %-12s piper 가 PATH 에 없다\n' ''; ok=1; }
+    elif command -v espeak-ng >/dev/null; then
+      printf '  %-12s espeak-ng — 포먼트 합성이라 한국어가 거칠다\n' TTS
+    else
+      printf '  %-12s 없음 (espeak-ng 또는 NAUTICE_PIPER_MODEL 필요)\n' TTS; ok=1
+    fi
+    if p=$(linux_player); then
+      printf '  %s %s' '재생기      ' "$p"
+      [[ $p == aplay ]] && printf ' — 볼륨을 못 받는다. --vol 이 무시된다'
+      printf '\n'
+    else
+      printf '  %s 없음 (pw-play/paplay/aplay/ffplay/mpv)\n' '재생기      '; ok=1
+    fi
+  fi
+
+  local h=''
+  for t in shasum sha1sum md5sum; do command -v "$t" >/dev/null && { h=$t; break; }; done
+  if [[ -n $h ]]; then printf '  %s %s\n' '해시        ' "$(command -v "$h")"
+  else printf '  %s 없음 (shasum / sha1sum / md5sum 중 하나가 필요하다)\n' '해시        '; ok=1; fi
+
+  if command -v flock >/dev/null; then printf '  %-12s %s\n' flock "$(command -v flock)"
+  else printf '  %-12s 없음 — mkdir 락으로 대체\n' flock; fi
+
+  printf '  %s %s\n' '효과음      ' "$(find_sounds)"
+  printf '  %s %s' '캐시        ' "$NAUTICE_CACHE"
+  if [[ -d $NAUTICE_CACHE ]]; then
+    printf ' (%s개, %s)\n' \
+      "$(find "$NAUTICE_CACHE" \( -name '*.aiff' -o -name '*.wav' \) | wc -l | tr -d ' ')" \
+      "$(du -sh "$NAUTICE_CACHE" 2>/dev/null | cut -f1)"
+  else printf ' (아직 없음)\n'; fi
+  printf '  %s vol=%s rate=%s\n' '기본값      ' "$NAUTICE_VOL" "$NAUTICE_RATE"
+
+  if [[ $PLATFORM == macos ]]; then
+    printf '  %s ko=%s  en=%s\n' '해석 보이스 ' "$(best_voice ko Yuna)" "$(best_voice en Samantha)"
+    # compact/eloquence 는 저용량 온디바이스 합성이다. 알림으로 쓸 만한 품질은
+    # 시스템 설정 > 손쉬운 사용 > 음성 콘텐츠 > 시스템 음성 > 음성 관리 에서
+    # 받는 (Premium) / (Enhanced) 쪽이다.
+    local hi; hi=$(voice_list ko | grep -c -E '\((Premium|Enhanced)\)' || true)
+    if (( hi > 0 )); then printf '  %s 한국어 %s개\n' '고품질      ' "$hi"
+    else printf '  %s 없음 — 시스템 설정 > 손쉬운 사용 > 음성 콘텐츠 > 음성 관리\n' '고품질      '; fi
+  fi
+  return $ok
+}
+
+cmd_cache() {
+  case "${1:-info}" in
+    clear) rm -rf "$NAUTICE_CACHE"; echo "캐시를 비웠다: $NAUTICE_CACHE (보이스 재해석 포함)" ;;
+    info)  if [[ -d $NAUTICE_CACHE ]]; then
+             printf '%s  %s개  %s\n' "$NAUTICE_CACHE" \
+               "$(find "$NAUTICE_CACHE" \( -name '*.aiff' -o -name '*.wav' \) | wc -l | tr -d ' ')" \
+               "$(du -sh "$NAUTICE_CACHE" 2>/dev/null | cut -f1)"
+           else echo "캐시 없음: $NAUTICE_CACHE"; fi ;;
+    *) die "cache 대상: info | clear" ;;
+  esac
+}
+
+usage() {
+  cat <<'USAGE'
+nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
+
+사용법
+  nautice say   [옵션] <문구>       읽는다 (생략시 stdin)
+  nautice play  [옵션] <이름|경로>  효과음을 낸다
+  nautice alert [옵션] <문구>       효과음 뒤에 읽는다
+  nautice call  [옵션] [문구]       사람을 부른다 (alert + 기본문구, 2회)
+  nautice list  [voices|sounds]     목록
+  nautice doctor                    환경 점검
+  nautice cache [info|clear]        렌더 캐시
+
+옵션
+  -v, --voice NAME   보이스 (auto | best | 이름)
+  -V, --vol N        0.0 ~ 1.0            (기본 0.6)
+  -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
+  -t, --tone NAME    alert/call 의 효과음  (기본 ask)
+  -n, --repeat N     1 ~ 20               (기본 1, call 은 2)
+  -g, --gap SEC      반복 사이 간격        (기본 0.4)
+  -a, --async        기다리지 않고 반환 (훅에서 필수)
+  -q, --quiet        상태 줄을 찍지 않는다
+
+효과음 이름표: ok error warn ask start notify
+
+예시
+  nautice call
+  nautice say "빌드가 끝났습니다"
+  nautice alert -t warn -n 3 "디스크가 찼습니다"
+  nautice play -V 0.3 ok
+  echo "파이프도 된다" | nautice say
+USAGE
+}
+
+# ── 인자 ────────────────────────────────────────────────────────────────────
+OPT_VOICE='' OPT_VOL='' OPT_RATE='' OPT_TONE=''
+OPT_REPEAT=1 OPT_GAP=0.4 OPT_QUIET=0 OPT_ASYNC=0 OPT_PLAN=0
+CMD_NAME=''
+REPEAT_GIVEN=0
+ARGS=()
+
+num_in_range() { awk -v v="$1" -v lo="$2" -v hi="$3" 'BEGIN { exit !(v >= lo && v <= hi) }' 2>/dev/null; }
+
+while (($#)); do
+  case $1 in
+    -v|--voice)  OPT_VOICE=$2; shift 2 ;;
+    -V|--vol)    OPT_VOL=$2;   shift 2 ;;
+    -r|--rate)   OPT_RATE=$2;  shift 2 ;;
+    -t|--tone)   OPT_TONE=$2;  shift 2 ;;
+    -n|--repeat) OPT_REPEAT=$2; REPEAT_GIVEN=1; shift 2 ;;
+    -g|--gap)    OPT_GAP=$2;   shift 2 ;;
+    -a|--async)  OPT_ASYNC=1;  shift ;;
+    -q|--quiet)  OPT_QUIET=1;  shift ;;
+    --plan)      OPT_PLAN=1;   shift ;;
+    -h|--help)   usage; exit 0 ;;
+    --version)   echo "nautice $VERSION"; exit 0 ;;
+    --)          shift; ARGS+=("$@"); break ;;
+    -*)          die "모르는 옵션: $1" ;;
+    *)           ARGS+=("$1"); shift ;;
+  esac
+done
+set -- "${ARGS[@]:-}"
+
+[[ -n $OPT_VOL  ]] && { num_in_range "$OPT_VOL" 0 10   || die "--vol 은 0.0 ~ 1.0 이다: $OPT_VOL"; }
+[[ -n $OPT_RATE ]] && { num_in_range "$OPT_RATE" 0.1 10 || die "--rate 는 배속이다 (0.1 ~ 10): $OPT_RATE"; }
+num_in_range "$OPT_REPEAT" 1 20 || die "--repeat 은 1 ~ 20 이다: $OPT_REPEAT"
+num_in_range "$OPT_GAP" 0 10    || die "--gap 은 0 ~ 10 초다: $OPT_GAP"
+
+# 훅에서 쓰려면 에이전트를 막지 않아야 한다. 인자를 다 검사한 뒤에 떼어내므로
+# 인자가 틀렸으면 떼어내기 전에 여기서 죽는다.
+detach() {
+  local args=("$1"); shift
+  [[ -n $OPT_VOICE ]] && args+=(--voice "$OPT_VOICE")
+  [[ -n $OPT_VOL   ]] && args+=(--vol   "$OPT_VOL")
+  [[ -n $OPT_RATE  ]] && args+=(--rate  "$OPT_RATE")
+  [[ -n $OPT_TONE  ]] && args+=(--tone  "$OPT_TONE")
+  [[ $REPEAT_GIVEN == 1 ]] && args+=(--repeat "$OPT_REPEAT")
+  args+=(--gap "$OPT_GAP" --quiet --)
+  nohup "$0" "${args[@]}" "$@" >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+}
+
+cmd=${1:-}; [[ $# -gt 0 ]] && shift
+case $cmd in
+  say|play|alert|call)
+    if [[ $OPT_ASYNC == 1 ]]; then detach "$cmd" "$@"; exit 0; fi
+    "cmd_$cmd" "$@" ;;
+  list|doctor|cache) "cmd_$cmd" "$@" ;;
+  ""|help) usage ;;
+  *) die "모르는 명령: $cmd (nautice --help)" ;;
+esac

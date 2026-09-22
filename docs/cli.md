@@ -146,6 +146,16 @@ OS-neutral units; each implementation converts to its backend.
 Windows SAPI `Rate` is −10 – 10 and speed is roughly `3^(Rate/10)`, so the
 inverse `10·log₃(rate)` is used and clamped to −10 – 10.
 
+## Cache
+
+The bash side caches rendered speech and its voice choices (the voice list and
+the voice picked per language) under `$NAUTICE_CACHE/<version>/`. **A cache
+belongs to one version:** choices made by an older version's logic would
+otherwise keep being used after an upgrade, with no sign of it. On start,
+nautice removes caches left by other versions — only files it writes itself,
+since `NAUTICE_CACHE` may point at a shared directory. `nautice cache clear`
+removes everything it wrote, for every version. Windows has no cache.
+
 ## Sound names
 
 `ok` `error` `warn` `ask` `start` `notify` — each is `share/sounds/<name>.wav`.
@@ -228,5 +238,5 @@ Backend limits, not bugs. The conformance test allows exactly these.
 | `NAUTICE_CHANNEL` | Default channel (`sound` / `visual` / `both`) |
 | `NAUTICE_CALL_MESSAGE` | Default text of `call` |
 | `NAUTICE_SOUNDS` | Bundled sound directory; if empty, `../share/sounds` next to the executable |
-| `NAUTICE_CACHE` | Render cache location (bash side only) |
+| `NAUTICE_CACHE` | Cache location (bash side only); data goes in a per-version subdirectory |
 | `NAUTICE_PIPER_MODEL` | piper `.onnx` model to use on Linux |

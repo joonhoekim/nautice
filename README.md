@@ -261,9 +261,10 @@ nix build .#nautice    # includes shellcheck
 
 ## Behaviour
 
-- **Cache** — `$NAUTICE_CACHE/*`, keyed by `sha1(platform|voice|rate|text)`. The
-  hash tool is `shasum`, then `sha1sum`, then `md5sum`; minimal Linux installs
-  lack `shasum`.
+- **Cache** — `$NAUTICE_CACHE/<version>/`, keyed by
+  `sha1(platform|voice|rate|text)`; an upgrade starts a fresh cache. The hash
+  tool is `shasum`, then `sha1sum`, then `md5sum`; minimal Linux installs lack
+  `shasum`.
 - **Lock** — held only during playback; rendering may run in parallel. Without
   `flock` it falls back to a mkdir lock and gives up after 30 s and plays anyway —
   overlapping sound beats silently losing a notification.

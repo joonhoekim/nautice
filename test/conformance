@@ -260,6 +260,30 @@ else
 fi
 echo
 
+# ── Cache belongs to one version ────────────────────────────────────────────
+# Voice choices cached by an older version would otherwise outlive an upgrade.
+# Pruning must keep files nautice did not write: NAUTICE_CACHE can be shared.
+echo "Cache belongs to one version (bash side)"
+if (( have_bash )); then
+  c=$(mktemp -d)
+  printf 'Stale\ten\n' > "$c/.voices"; printf 'Stale' > "$c/.voice-en"
+  mkdir "$c/0.0.1"; touch "$c/0123456789abcdef0123456789abcdef01234567.aiff" "$c/keep.wav" "$c/notes.txt"
+  ver=$(sed -n 's/^VERSION=//p' "$BASH_IMPL")
+  entries() { find "$c" -mindepth 1 -maxdepth 1 ! -name "$ver" ! -name .lock -exec basename {} \; | sort | tr '\n' ' '; }
+  NAUTICE_CACHE=$c run_bash say --plan x >/dev/null
+  left=$(entries)
+  if [[ $left == "keep.wav notes.txt " ]]; then ok "old version's cache pruned, other files kept"
+  else bad "cache prune" "left: $left"; fi
+  NAUTICE_CACHE=$c run_bash cache clear >/dev/null
+  left=$(find "$c" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort | tr '\n' ' ')
+  if [[ $left == "keep.wav notes.txt " ]]; then ok "cache clear removes only its own files"
+  else bad "cache clear" "left: $left"; fi
+  rm -rf "$c"
+else
+  printf '  \033[33mskip\033[0m %s (%s)\n' "cache" "$SKIP_WHY"
+fi
+echo
+
 # ── Version ─────────────────────────────────────────────────────────────────
 # The version lives in three files; bumping one splits --version from the nix
 # package. Read from files, so all three are checked on any machine.

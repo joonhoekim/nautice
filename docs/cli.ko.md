@@ -144,6 +144,15 @@ finished` 는 같은 문자다. 그래서 OS 로캘(`LANG`·`LC_MESSAGES`, Windo
 Windows SAPI 의 `Rate` 는 −10 – 10 이고 속도는 대략 `3^(Rate/10)` 배다. 그래서
 역함수 `10·log₃(배속)` 로 환산하고 −10 – 10 으로 자른다.
 
+## 캐시
+
+bash 쪽은 렌더한 음성과 보이스 해석 결과(보이스 표, 언어별로 고른 보이스)를
+`$NAUTICE_CACHE/<버전>/` 에 둔다. **캐시는 한 버전의 것이다.** 안 그러면 옛
+버전의 로직으로 고른 보이스가 업그레이드 뒤에도 표시 없이 계속 쓰인다. 시작할
+때 다른 버전이 남긴 캐시를 지운다 — `NAUTICE_CACHE` 가 공용 디렉터리일 수 있어서
+자기가 쓴 파일만 지운다. `nautice cache clear` 는 모든 버전에 걸쳐 자기가 쓴 것을 전부 지운다. Windows 는 캐시가
+없다.
+
 ## 효과음 이름표
 
 `ok` `error` `warn` `ask` `start` `notify` — `share/sounds/<이름>.wav` 를 가리킨다.
@@ -224,5 +233,5 @@ Windows SAPI 의 `Rate` 는 −10 – 10 이고 속도는 대략 `3^(Rate/10)` �
 | `NAUTICE_CHANNEL` | 기본 채널 (`sound` / `visual` / `both`) |
 | `NAUTICE_CALL_MESSAGE` | `call` 의 기본 문구 |
 | `NAUTICE_SOUNDS` | 번들 효과음 디렉터리. 비면 실행 파일 옆의 `../share/sounds` 를 찾는다 |
-| `NAUTICE_CACHE` | 렌더 캐시 위치 (bash 쪽만 쓴다) |
+| `NAUTICE_CACHE` | 캐시 위치 (bash 쪽만 쓴다). 데이터는 버전별 하위 디렉터리에 둔다 |
 | `NAUTICE_PIPER_MODEL` | Linux 에서 쓸 piper `.onnx` 경로 |

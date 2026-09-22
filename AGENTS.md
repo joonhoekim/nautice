@@ -106,6 +106,10 @@ Why it was needed and what changes. No more than three lines.
 ```
 
 - `type` is one of `feat` / `fix` / `refactor` / `chore` / `docs` / `test`.
+- A breaking change to the contract gets `!` after the type or scope
+  (`feat(cli)!: ...`); release notes list it under "Breaking changes". What counts
+  as breaking, and the deprecation rule, is in `docs/cli.md` under
+  "Compatibility".
 - `scope` is the area touched (`bash`, `windows`, `sounds`, `cli`, `nix`, …).
 - The subject describes an **action**, not a noun phrase — "reject unknown
   voices", not "voice validation". Lowercase, no trailing period.

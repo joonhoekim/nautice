@@ -292,4 +292,5 @@ nix build .#nautice    # includes shellcheck
 `NAUTICE_CHANNEL` `NAUTICE_CALL_MESSAGE` `NAUTICE_CACHE` `NAUTICE_SOUNDS`
 `NAUTICE_PIPER_MODEL`
 
-Details in [`docs/cli.md`](docs/cli.md).
+Details in [`docs/cli.md`](docs/cli.md), including which parts are a stable
+interface ("Compatibility").

@@ -175,6 +175,22 @@ Other values are tried as a path, then as an OS sound
 `--async` detaches only after validating arguments, so bad input still exits 1
 right away.
 
+## Compatibility
+
+Agent hooks and instructions call nautice by option name, so a renamed option
+breaks them silently. **This contract is the public API:** commands, options,
+their units and ranges, environment variables, sound names and exit codes.
+Not part of it: `--plan` output (a test aid), the wording of status lines,
+errors and `doctor`, and the cache layout.
+
+- **Removing or renaming** an option or environment variable: the old name keeps
+  working for at least one minor release and prints a deprecation warning on
+  stderr, then it goes.
+- **Versions:** while 0.x, a breaking change bumps the minor version and
+  everything else the patch version. From 1.0, semantic versioning.
+- **Changed defaults** (such as `call`'s text) are not breaking, but are called
+  out in the release notes.
+
 ## Platform differences (intended)
 
 Backend limits, not bugs. The conformance test allows exactly these.

@@ -108,6 +108,9 @@ Why it was needed and what changes. No more than three lines.
 ```
 
 - `type` 은 `feat` / `fix` / `refactor` / `chore` / `docs` / `test` 중 하나.
+- 계약을 깨는 변경은 type 이나 scope 뒤에 `!` 를 붙인다(`feat(cli)!: ...`).
+  릴리스 노트가 "Breaking changes" 로 따로 모은다. 무엇이 깨지는 변경이고
+  폐기를 어떻게 하는지는 `docs/cli.ko.md` 의 "호환성" 에 있다.
 - `scope` 는 건드린 자리(`bash`, `windows`, `sounds`, `cli`, `nix`…).
 - 제목은 명사구가 아니라 **동작**으로 쓴다 — "voice validation" 이 아니라
   "reject unknown voices". 소문자로 시작하고 마침표를 찍지 않는다.

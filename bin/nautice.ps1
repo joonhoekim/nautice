@@ -27,7 +27,7 @@ $ErrorActionPreference = 'Stop'
 $SystemCulture = [Globalization.CultureInfo]::CurrentCulture
 [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
 
-$VERSION = '0.3.0'
+$VERSION = '0.4.0'
 
 # 부를 때마다 두 번 반복하므로 짧아야 한다.
 $CallMessage = '클로드가 부릅니다'

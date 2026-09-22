@@ -47,6 +47,7 @@
             meta = {
               description = "에이전트가 사람의 주의를 끄는 알림 CLI";
               mainProgram = "nautice";
+              license = lib.licenses.mit;
               platforms = lib.platforms.darwin ++ lib.platforms.linux;
             };
           };

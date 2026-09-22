@@ -50,9 +50,11 @@ docker run --rm -v "$PWD:/w:ro" -w /w debian:stable-slim bash -c \
   `.gitattributes` 가 `*.ps1` 을 CRLF 로 고정하는 것도 같은 이유다.
 - **`share/sounds/*.wav` 를 직접 편집하지 않는다.** `tools/gen-sounds.py` 가
   만든다. 소리를 바꾸려면 생성기의 `TONES` 를 고치고 다시 돌린다.
-- **셸 정규식에 한글 범위를 여러 개 묶지 않는다.** `[가-힣ㄱ-ㅎ]` 는 en_US
-  콜레이션에서 정렬 순서가 코드포인트 순서와 달라 "invalid character range" 로
-  죽는다. 음절 범위 `[가-힣]` 하나만 쓴다.
+- **셸에서 한글을 정규식 범위로 찾지 않는다.** `LC_CTYPE` 이 `C` 면 `[가-힣]` 이
+  **모든 문자에 매치해서** 영어 문장도 한국어 보이스로 나간다 — cron·systemd·
+  컨테이너처럼 로캘이 없는 곳에서 조용히 그렇게 된다. 범위를 여러 개 묶으면
+  (`[가-힣ㄱ-ㅎ]`) en_US 콜레이션에서 "invalid character range" 로 죽기까지 한다.
+  `has_hangul` 처럼 UTF-8 바이트로 본다.
 - **숫자를 문화권 타는 API 로 다루지 않는다.** 소수점이 쉼표인 곳에서
   `[double]::TryParse("0.4")` 는 조용히 `4` 를, `printf '%.3f' 0.4` 는 `0,000` 을
   내놓는다. 양쪽 다 시작할 때 문화권을 떼어내고(`LC_NUMERIC=C`,

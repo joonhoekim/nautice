@@ -434,15 +434,9 @@ function Invoke-Doctor([hashtable] $o) {
         $s.Dispose()
         Write-Output ("  {0,-11} System.Speech — 음성 {1}개" -f 'TTS', $voices.Count)
         if ($voices.Count -eq 0) { $ok = 1 }
-        $ko = @($voices | Where-Object { $_.VoiceInfo.Culture.Name -eq 'ko-KR' })
-        if ($ko.Count -gt 0) {
-            Write-Output ("  {0,-11} {1}" -f '한국어', ($ko | ForEach-Object { $_.VoiceInfo.Name }) -join ', ')
-        } else {
-            Write-Output ("  {0,-11} 없음 — 설정 > 시간 및 언어 > 음성 에서 한국어 음성을 추가하라" -f '한국어')
-        }
         # Languages with a voice. Others fall back silently under -q.
         $langs = @($voices | ForEach-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName } | Sort-Object -Unique)
-        Write-Output ("  {0,-11} {1}" -f '보이스 언어', ($langs -join ' '))
+        Write-Output ("  {0,-11} {1} — 더하려면 설정 > 시간 및 언어 > 음성" -f '보이스 언어', ($langs -join ' '))
     } catch {
         Write-Output ("  {0,-11} System.Speech 를 못 불러왔다: {1}" -f 'TTS', $_.Exception.Message)
         $ok = 1

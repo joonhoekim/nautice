@@ -541,8 +541,10 @@ cmd_doctor() {
   if [[ $PLATFORM == macos ]]; then
     # Built-in compact/eloquence voices are low quality. Premium/Enhanced ones
     # come from System Settings > Accessibility > Spoken Content > Manage Voices.
-    local hi; hi=$(voice_list ko | grep -c -E '\((Premium|Enhanced)\)' || true)
-    if (( hi > 0 )); then printf '  %s 한국어 %s개\n' '고품질      ' "$hi"
+    local hi; hi=$(voice_table \
+      | awk -F'\t' '$1 ~ /\((Premium|Enhanced)\)$/ { n[$2]++ } END { for (l in n) print l " " n[l] }' \
+      | sort | paste -sd, - | sed 's/,/, /g')
+    if [[ -n $hi ]]; then printf '  %s %s\n' '고품질      ' "$hi"
     else printf '  %s 없음 — 시스템 설정 > 손쉬운 사용 > 음성 콘텐츠 > 음성 관리\n' '고품질      '; fi
   fi
   return $ok

@@ -269,8 +269,9 @@ function Invoke-Say([hashtable] $o) {
 
 function Invoke-Play([hashtable] $o) {
     if ($o.Rest.Count -eq 0) { Die '사운드 이름이나 경로가 필요하다 (nautice list sounds)' }
-    if ($o.Plan) { Write-Plan $o 'play' $o.Rest[0] ''; return }
+    # 해석이 계획보다 먼저다. 없는 사운드는 --plan 에서도 1 로 죽어야 bash 와 같다.
     $file = Resolve-Sfx $o.Rest[0]
+    if ($o.Plan) { Write-Plan $o 'play' $o.Rest[0] ''; return }
     Write-Status $o "play x$($o.Repeat) [$($o.Rest[0])]"
     Invoke-Emit $o $file $null ''
 }

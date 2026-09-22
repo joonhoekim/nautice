@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
-# nautice — 에이전트가 사람의 주의를 끄는 알림 CLI (macOS · Linux).
-# Windows 구현은 bin/nautice.ps1 에 있다. 동작 계약은 docs/cli.md 가 단일 출처다.
+# nautice — a notification CLI that lets an agent get a human's attention (macOS, Linux).
+# The Windows implementation is bin/nautice.ps1. docs/cli.md is the contract for both.
 set -euo pipefail
 
-# 숫자 서식을 문화권에서 뗀다. 소수점이 쉼표인 로캘에서는 printf '%.3f' 0.4 가
-# "invalid number" 로 죽고 값은 0,000 이 된다 (de_DE·fr_FR 실측). 인자마다
-# 로캘을 지정하는 방식은 한 군데만 빠뜨려도 다시 새므로 아예 떼어낸다.
-# LC_ALL 은 개별 카테고리를 덮으므로 설정돼 있으면 LC_CTYPE 으로 옮겨 담고
-# 지운다 — 한글 감지의 [가-힣] 범위에 필요한 건 LC_CTYPE 뿐이다.
+# With a comma decimal mark, printf '%.3f' 0.4 fails and prints 0,000 (de_DE,
+# fr_FR). LC_ALL would override LC_NUMERIC, so move it into LC_CTYPE first.
 if [[ -n ${LC_ALL:-} ]]; then export LC_CTYPE="$LC_ALL"; unset LC_ALL; fi
 export LC_NUMERIC=C
 
@@ -20,20 +17,19 @@ VERSION=0.4.0
 : "${NAUTICE_RATE:=1.0}"
 : "${NAUTICE_PIPER_MODEL:=}"
 : "${NAUTICE_CHANNEL:=sound}"
-# 어느 에이전트가 부르는지는 쓰는 사람이 정한다. 기본값은 중립이다 — 이 도구는
-# 특정 에이전트에 묶이지 않는다.
+# Neutral on purpose: the tool is not tied to any agent. Users can name theirs.
 : "${NAUTICE_CALL_MESSAGE:=에이전트가 부릅니다}"
 
-# say 와 espeak-ng 의 보통 속도. 배속 1.0 이 이 값이다 — macOS 에서 실측하면
-# `say -r 175` 와 -r 를 안 준 자연 속도가 같은 길이로 나온다 (Yuna Premium, 2.53s).
+# Normal speed for say and espeak-ng, i.e. rate 1.0. On macOS `say -r 175` and
+# say without -r produce the same duration (Yuna Premium, 2.53 s).
 BASE_WPM=175
 LOCK="$NAUTICE_CACHE/.lock"
 LOCK_TIMEOUT=30
 
 die() { printf 'nautice: %s\n' "$*" >&2; exit 1; }
 
-# shasum 은 macOS 에 늘 있지만 최소 설치된 Linux(debian:stable-slim 등)에는 없다 —
-# 거기서는 sha1sum 이다. 해시는 캐시 키로만 쓰므로 어느 구현이든 상관없다.
+# shasum is always on macOS but missing from minimal Linux (debian:stable-slim),
+# which has sha1sum. The hash is only a cache key, so any of them will do.
 hash_stdin() {
   if   command -v shasum  >/dev/null 2>&1; then shasum
   elif command -v sha1sum >/dev/null 2>&1; then sha1sum
@@ -43,9 +39,9 @@ hash_stdin() {
 }
 say_status() { [[ $OPT_QUIET == 1 ]] || printf 'nautice: %s\n' "$*"; }
 
-# ── 번들 효과음 찾기 ────────────────────────────────────────────────────────
-# 레포에서 직접 실행할 때와 nix 로 설치했을 때 배치가 다르다. 심링크를 따라가야
-# nix profile 의 bin/nautice 에서도 share 를 찾는다.
+# ── Locating bundled sounds ─────────────────────────────────────────────────
+# The layout differs between a checkout and an installed prefix. Symlinks must
+# be followed, or a nix profile's bin/nautice cannot find share/.
 script_dir() {
   local src=${BASH_SOURCE[0]} dir
   while [[ -L $src ]]; do
@@ -56,8 +52,8 @@ script_dir() {
   cd -P "$(dirname "$src")" && pwd
 }
 
-# Git Bash·MSYS 에서 `nautice` 를 부르면 여기로 온다. 이름 하나로 세 OS 를
-# 쓰려면 그쪽 구현으로 넘겨야 한다. WSL 은 Linux 로 보고되므로 넘기지 않는다.
+# Git Bash / MSYS land here; hand over to the Windows implementation so one
+# name works everywhere. WSL reports Linux and stays.
 case "$(uname -s)" in
   Darwin) PLATFORM=macos ;;
   Linux)  PLATFORM=linux ;;
@@ -77,9 +73,9 @@ find_sounds() {
   die "번들 효과음을 못 찾았다. NAUTICE_SOUNDS 로 경로를 지정하라"
 }
 
-# ── 오디오 재생 ─────────────────────────────────────────────────────────────
-# 재생기마다 볼륨 단위가 달라서 여기서 환산한다. 볼륨을 못 받는 재생기(aplay)는
-# 시스템 볼륨으로 난다 — 조용히 무시되므로 doctor 가 어느 재생기를 쓰는지 밝힌다.
+# ── Audio playback ──────────────────────────────────────────────────────────
+# Each player takes volume in its own unit. aplay takes none and silently plays
+# at system volume, which is why doctor names the player in use.
 linux_player() {
   local p
   for p in pw-play paplay aplay ffplay mpv; do
@@ -88,9 +84,9 @@ linux_player() {
   return 1
 }
 
-# afplay 는 기동에만 약 0.95초를 쓴다 (0.43초 파일 재생에 1.38초, 3회 측정,
-# macOS 26 / M 계열). 짧은 알림음에서는 이 오버헤드가 소리 길이보다 크다.
-# 훅에서는 --async 로 떼어내므로 보이지 않지만, 반복 횟수를 늘리면 그만큼 붙는다.
+# afplay spends ~0.95 s just starting up (1.38 s to play a 0.43 s file, 3 runs,
+# macOS 26 / Apple silicon) — longer than a short chime. Hooks detach with
+# --async so it is not felt there, but every --repeat adds it again.
 audio_play() {
   local file=$1 vol=${OPT_VOL:-$NAUTICE_VOL}
   if [[ $PLATFORM == macos ]]; then
@@ -108,10 +104,10 @@ audio_play() {
   esac
 }
 
-# ── 시각 채널 (배너) ────────────────────────────────────────────────────────
-# 백엔드를 불렀다고 배너가 떴다는 뜻은 아니다. osascript 는 알림 권한이 없거나
-# 집중 모드에 눌려도 0 을 내고, notify-send 도 데몬이 버리면 그렇다. say 가 없는
-# 보이스를 조용히 넘기는 것과 같은 종류의 실패다 — docs/cli.md 에 적어 뒀다.
+# ── Visual channel (banner) ─────────────────────────────────────────────────
+# Exit 0 only means the backend was called. osascript returns 0 without
+# notification permission or under Focus, and notify-send does when the daemon
+# drops the message. See "Platform differences" in docs/cli.md.
 visual_backend() {
   case $PLATFORM in
     macos) printf 'osascript' ;;
@@ -125,51 +121,40 @@ banner_show() {
     || die "$b 가 없다 (--channel 로 시각 채널을 쓰려면 필요하다)"
   case $PLATFORM in
     macos)
-      # 문구를 AppleScript 문자열 리터럴에 끼워 넣지 않는다. 따옴표와 역슬래시를
-      # 일일이 이스케이프해야 하고 한 군데만 새도 스크립트가 다른 뜻이 된다.
-      # argv 로 넘기면 이스케이프가 아예 필요 없다.
+      # Pass the text through argv instead of splicing it into an AppleScript
+      # string literal, which would need quotes and backslashes escaped.
       #
-      # --hold 는 여기서 아무 일도 안 한다. 배너로 뜰지 알림으로 뜰지는 시스템
-      # 설정 > 알림의 앱별 스타일이 정하는 사용자 설정이라 display notification
-      # 으로는 못 바꾼다 — docs/cli.md 의 플랫폼 차이에 적어 뒀다.
+      # --hold is a no-op here: banner vs. persistent alert is a per-app user
+      # setting (System Settings > Notifications) that scripts cannot change.
       osascript - "$text" nautice <<'AS' >/dev/null
 on run argv
   display notification (item 1 of argv) with title (item 2 of argv)
 end run
 AS
       ;;
-    # -t 0 은 "만료 없음" 이지만 힌트일 뿐이라 데몬이 무시할 수 있다 (GNOME
-    # Shell 이 그렇다). --hold 를 보장하는 OS 는 Windows 뿐이다 — docs/cli.md 참고.
+    # -t 0 means "never expire", but it is only a hint; GNOME Shell ignores it.
     linux)
       if [[ $OPT_HOLD == 1 ]]; then notify-send -t 0 -- nautice "$text"
       else                          notify-send -- nautice "$text"; fi ;;
   esac
 }
 
-# 배너는 --repeat 을 따르지 않는다. 같은 알림이 센터에 쌓이면 읽을 수 없다.
+# Banners ignore --repeat: copies piling up in the notification center are noise.
 maybe_banner() {
   [[ $CHANNEL == sound ]] && return 0
   banner_show "$1"
 }
 
-# 상태 줄에 배너를 같이 냈다는 것을 덧붙인다.
+# Suffix for the status line when a banner was shown too.
 chan_note() { [[ $CHANNEL == sound ]] || printf ' +배너'; }
 
-# ── 언어 판정 ───────────────────────────────────────────────────────────────
-# 문자 계열을 UTF-8 바이트로 가린다. 정규식 범위([가-힣])를 쓰지 않는 이유가
-# 둘이다. LC_CTYPE 이 C 면 그 대괄호가 모든 문자에 매치해서 영어 문장도 한국어
-# 보이스로 나간다 — cron·systemd·컨테이너처럼 로캘이 없는 환경에서 조용히
-# 그렇게 된다. 자모(ㄱ-ㅎ)까지 묶으면 en_US 콜레이션에서 정렬 순서가 코드포인트
-# 순서와 달라 "invalid character range" 로 죽는다. 바이트로 보면 둘 다 안 생긴다.
-#
-# hex 를 한 덩어리로 붙이면 안 된다. 앞 바이트의 끝자리와 뒷 바이트의 첫자리가
-# 맞닿아 없는 값이 생긴다 — "Renée" 는 6e c3 라서 "…6ec3…" 안에 ec 가 보이고,
-# 영어 문장이 한국어 보이스로 나갔다. 바이트마다 줄을 끊어 awk 로 짚는다.
-#
-# 두 번째 바이트까지 보는 것은 범위를 유니코드 표와 정확히 맞추기 위해서다
-# (docs/cli.md 의 표). 첫 바이트만 보면 EA 가 이(Yi) 문자까지 한글로 친다.
-# awk 는 strtonum 이 없는 구현이 있어(BSD awk) 16진수 문자열을 그대로 비교한다 —
-# 두 자리 소문자로 0 채움이라 사전순 비교가 곧 수 비교다.
+# ── Language detection ──────────────────────────────────────────────────────
+# Read UTF-8 bytes, not regex ranges like [가-힣]: with LC_CTYPE=C (cron,
+# containers) such a range matches everything, and under en_US collation a
+# range spanning jamo dies with "invalid character range".
+# One byte per line — a joined hex string lets "Renée" (6e c3) show a false
+# "ec". Two bytes are checked so ranges match docs/cli.md exactly. Hex is
+# compared as strings: BSD awk has no strtonum.
 detect_lang() {
   printf '%s' "$1" | od -An -tx1 -v | tr ' ' '\n' | grep -v '^$' | awk '
     { n++; h[n] = $1 }
@@ -186,7 +171,7 @@ detect_lang() {
         else if (a == "e0" && b >= "b8" && b <= "b9") th = 1
         else if (a == "e0" && b >= "a4" && b <= "a5") hi = 1
       }
-      # 섞이면 이 순서가 이긴다 (docs/cli.md 의 표 순서).
+      # Mixed text: first in this order wins (same order as docs/cli.md).
       if (ko) print "ko"; else if (ja) print "ja"; else if (zh) print "zh"
       else if (ru) print "ru"; else if (el) print "el"; else if (ar) print "ar"
       else if (he) print "he"; else if (th) print "th"; else if (hi) print "hi"
@@ -194,11 +179,11 @@ detect_lang() {
     }'
 }
 
-# 라틴 문자권 언어 목록. 로캘이 이 안에 있을 때만 라틴 문구의 기본 언어로 쓴다 —
-# 한국어 로캘에서 영어 문구를 한국어 보이스가 읽는 일을 막는다.
+# Latin-script languages. The locale decides the language of Latin text only
+# when it is one of these, so a Korean locale does not read English in Korean.
 LATIN_LANGS=" af ca cs cy da de en es et eu fi fr ga gl hr hu id is it lt lv ms nb nl nn no pl pt ro sk sl sq sv sw tl tr vi "
 
-# 로캘에서 두 글자 언어 코드를 꺼낸다. cron·systemd·컨테이너에는 아예 없다.
+# Two-letter language from the locale; often absent (cron, systemd, containers).
 locale_lang() {
   local l=${LC_MESSAGES:-${LANG:-}}
   l=${l%%.*}; l=${l%%_*}; l=${l%%@*}
@@ -211,16 +196,15 @@ resolve_lang() {
   if [[ $l != auto ]]; then printf '%s' "$l"; return; fi
   l=$(detect_lang "$text")
   if [[ -n $l ]]; then printf '%s' "$l"; return; fi
-  # 라틴이다. 글에서는 못 가리므로 로캘을 본다.
+  # Latin script: the text cannot tell, so fall back to the locale.
   l=$(locale_lang) || l=''
   if [[ -n $l && $LATIN_LANGS == *" $l "* ]]; then printf '%s' "$l"; else printf 'en'; fi
 }
 
-# ── 보이스 ──────────────────────────────────────────────────────────────────
-# macOS: say -v '?' 는 0.5s 걸린다. 한 번만 부르고 "이름<TAB>언어" 로 캐시에 적는다.
-# 이름 자체에 공백과 괄호가 들어가므로 (`Jian (Premium)`,
-# `Eddy (Korean (South Korea))`) 공백으로 자르면 안 된다 — 로케일 코드가
-# 이름 끝을 알려주는 유일한 표지다.
+# ── Voices ──────────────────────────────────────────────────────────────────
+# `say -v '?'` takes 0.5 s, so it runs once and is cached as "name<TAB>lang".
+# Names contain spaces and parentheses (`Eddy (Korean (South Korea))`); the
+# locale code (ko_KR, ar_001) is the only reliable end-of-name marker.
 voice_table() {
   local f="$NAUTICE_CACHE/.voices"
   if [[ ! -s $f ]]; then
@@ -231,7 +215,7 @@ voice_table() {
           | sed -E -n 's/^(.*[^[:space:]])[[:space:]]+([a-z]{2})_[A-Z0-9]{2,3}[[:space:]]+#.*$/\1\t\2/p' \
           > "$f" ;;
       linux)
-        # espeak-ng --voices 는 "Pty Language Age/Gender VoiceName File Other"
+        # espeak-ng --voices columns: Pty Language Age/Gender VoiceName File Other
         if command -v espeak-ng >/dev/null 2>&1; then
           espeak-ng --voices 2>/dev/null \
             | awk 'NR > 1 { c = $2; sub(/-.*/, "", c); print $4 "\t" c }' > "$f"
@@ -245,15 +229,13 @@ voice_table() {
 
 voice_list() { voice_table | awk -F'\t' -v l="$1" '$2 == l { print $1 }'; }
 
-# say 는 모르는 보이스를 받아도 exit 0 으로 기본 보이스를 써서 조용히 읽는다.
-# 이름에 오타가 나면 알림이 엉뚱한 목소리로 나가는데 아무 표시가 없다.
+# `say -v NoSuchVoice` exits 0 and quietly uses the default voice, so a typo
+# would go unnoticed. Check the name ourselves.
 voice_exists() { voice_table | cut -f1 | grep -qxF "$1"; }
 
-# macOS 가 그 언어의 기본으로 쓰는 이름. 단서가 이것뿐이라 표로 든다.
-# say 는 -v 를 빼면 언어를 안 가리고 시스템 보이스로 읽는다 — 일본어 문구가
-# 0.5초에 끝난다 (Kyoko 로는 1.26초). 그렇다고 목록의 첫 이름을 집으면 en 에서
-# novelty 보이스(Albert·Bad News·Bahh…)가 잡힌다. 품질 등급이 없는 언어에서
-# 제정신인 기본값을 고르려면 이 이름이 있어야 한다.
+# macOS's default voice per language. Without -v, say ignores the text's
+# language (Japanese ends in 0.5 s vs 1.26 s with Kyoko); the first listed en
+# voice is a novelty one (Albert). Without quality tiers this is the only cue.
 default_voice_name() {
   case $1 in
     ko) printf Yuna ;;     ja) printf Kyoko ;;    zh) printf Tingting ;;
@@ -267,10 +249,9 @@ default_voice_name() {
   esac
 }
 
-# 고품질 보이스는 ~/Library/Speech/Voices 가 아니라 MobileAsset 저장소로 들어간다.
-# 디렉터리로는 확인할 수 없고 say 목록의 (Premium)/(Enhanced) 꼬리표가 유일한 단서다.
-# 해석 결과를 캐시에 적는다 — 보이스를 새로 받았으면 nautice cache clear 로 비운다.
-# 그 언어의 보이스 하나를 고른다. 없으면 빈 값 — 부르는 쪽이 떨어질 곳을 정한다.
+# One voice for a language, or failure (the caller falls back). Quality voices
+# are spotted only by their "(Premium)"/"(Enhanced)" suffix. Cached — run
+# `nautice cache clear` after downloading voices.
 best_voice() {
   local lang=$1 names v="" pat
   local f="$NAUTICE_CACHE/.voice-$lang"
@@ -288,8 +269,7 @@ best_voice() {
   printf '%s' "$v"
 }
 
-# NAUTICE_VOICE_KO 처럼 언어별로 못박은 이름을 꺼낸다. 대문자 변환에 ${v^^} 를
-# 쓰지 않는다 — macOS 의 bash 3.2 에는 없다.
+# Per-language override such as NAUTICE_VOICE_KO. No ${v^^}: bash 3.2 lacks it.
 lang_voice_env() {
   local n; n=$(printf 'NAUTICE_VOICE_%s' "$1" | tr '[:lower:]' '[:upper:]')
   eval "printf '%s' \"\${$n:-}\""
@@ -301,14 +281,14 @@ resolve_voice() {
     named=$(lang_voice_env "$lang")
     [[ -n $named ]] && v=$named || v=best
   fi
-  # Linux 는 품질 등급이 없다. espeak-ng 는 언어 코드를 그대로 보이스로 받는다.
+  # espeak-ng has no quality tiers and takes the language code as the voice.
   if [[ $PLATFORM == linux ]]; then
     [[ $v == best || $v == auto ]] && v=$lang
     printf '%s' "$v"; return
   fi
   if [[ $v == best ]]; then
-    # 그 언어 보이스가 없으면 죽이지 않고 로캘·영어로 떨어진다. 알림 도구라
-    # 억양이 틀린 알림이 알림 없음보다 낫다 (docs/cli.md).
+    # No voice for the language: fall back rather than fail. A notification in
+    # the wrong accent beats no notification (docs/cli.md).
     v=$(best_voice "$lang") || v=$(best_voice en) || v=$(voice_table | cut -f1 | head -1)
     [[ -z ${v// } ]] && die "보이스를 하나도 못 찾았다 (nautice list voices)"
     printf '%s' "$v"; return
@@ -317,9 +297,9 @@ resolve_voice() {
   printf '%s' "$v"
 }
 
-# ── TTS 렌더 ────────────────────────────────────────────────────────────────
-# say 에도 espeak-ng 에도 재생 볼륨 옵션이 없다. 어차피 파일로 렌더해야 하고,
-# 그 파일을 캐시하면 같은 문장의 재합성을 건너뛴다.
+# ── TTS rendering ───────────────────────────────────────────────────────────
+# Neither say nor espeak-ng takes a playback volume, so speech is rendered to a
+# file and played by the audio player; caching the file skips re-synthesis.
 wpm_for() { awk -v m="$1" -v b="$BASE_WPM" 'BEGIN { printf "%d", m * b }'; }
 
 tts_render() {
@@ -351,8 +331,8 @@ tts_render() {
   printf '%s' "$path"
 }
 
-# ── 효과음 해석 ─────────────────────────────────────────────────────────────
-# 번들을 먼저 본다. 세 OS 가 같은 소리를 내야 알림의 뜻이 기계마다 안 흔들린다.
+# ── Sound resolution ────────────────────────────────────────────────────────
+# Bundled sounds first, so a tone means the same thing on every OS.
 sfx_resolve() {
   local name=$1 sounds
   [[ -f $name ]] && { printf '%s' "$name"; return; }
@@ -364,11 +344,10 @@ sfx_resolve() {
   die "그런 사운드가 없다: $name (nautice list sounds)"
 }
 
-# ── 큐 ──────────────────────────────────────────────────────────────────────
-# 재생이 겹치면 알림이 뭉개진다. 락을 재생 구간에만 건다 — 렌더는 병렬이어도 된다.
-# flock 이 없으면 mkdir 락으로 떨어진다. mkdir 락은 프로세스가 죽으면 남으므로
-# LOCK_TIMEOUT 이 지나면 포기하고 그냥 재생한다 — 겹쳐 들리는 편이 조용히
-# 알림을 잃는 것보다 낫다.
+# ── Queue ───────────────────────────────────────────────────────────────────
+# Overlapping playback garbles notifications, so playback (not rendering) is
+# serialised. Without flock a mkdir lock is used; it outlives a killed process,
+# so after LOCK_TIMEOUT we play anyway — overlap beats a lost notification.
 with_lock() {
   mkdir -p "$NAUTICE_CACHE"
   if command -v flock >/dev/null 2>&1; then
@@ -386,9 +365,9 @@ with_lock() {
   fi
 }
 
-# ── 반복 ────────────────────────────────────────────────────────────────────
-# 한 번의 알림 단위(차임 / 발화 / 둘 다)를 --repeat 회 되풀이한다. 전체를 한
-# 락 안에 넣어야 반복 사이로 다른 알림이 끼어들지 않는다.
+# ── Repetition ──────────────────────────────────────────────────────────────
+# Repeat one unit (chime, speech, or both) --repeat times, all inside one lock
+# so another notification cannot slip in between.
 emit() {
   local chime=$1 speech=$2 i
   for (( i = 1; i <= OPT_REPEAT; i++ )); do
@@ -401,10 +380,9 @@ emit() {
   return 0
 }
 
-# 소리를 내지 않고 해석 결과만 찍는다. 앞쪽 블록은 OS 와 무관하게 같아야 하고,
-# backend_* 는 docs/cli.md 의 환산식대로 나와야 한다 — test/conformance 가 본다.
-# lang 은 보이스를 고르는 근거다. voice 는 OS 마다 달라 비교할 수 없으므로,
-# 이게 없으면 한글 감지가 두 구현에서 갈라져도 테스트가 못 본다.
+# The resolved plan, without sound, for test/conformance. Fields before
+# backend= must match across OSes. voice cannot be compared, so lang is what
+# exposes a divergence in language detection.
 print_plan() {
   local cmd=$1 voice=$2 tone=$3 text=$4 lang
   lang=$(resolve_lang "$text")
@@ -433,7 +411,7 @@ read_text() {
   printf '%s' "$text"
 }
 
-# ── 명령 ────────────────────────────────────────────────────────────────────
+# ── Commands ────────────────────────────────────────────────────────────────
 cmd_say() {
   local text voice speech
   text=$(read_text "$@")
@@ -452,7 +430,7 @@ cmd_say() {
 cmd_play() {
   local file
   [[ $# -gt 0 && -n ${1:-} ]] || die "사운드 이름이나 경로가 필요하다 (nautice list sounds)"
-  # 효과음에는 문구가 없어 배너에 적을 것이 없다.
+  # A sound has no text to put in a banner.
   [[ $CHANNEL == sound ]] || die "play 는 문구가 없어 시각 채널을 못 쓴다 (--channel sound)"
   file=$(sfx_resolve "$1")
   [[ $OPT_PLAN == 1 ]] && { print_plan play '' "$1" ''; return 0; }
@@ -478,11 +456,11 @@ cmd_alert() {
 }
 
 cmd_call() {
-  # 사람을 부르는 게 목적이라 한 번으로는 놓치기 쉽다. 따로 지정하지 않으면 두 번.
+  # Calling a human: once is easy to miss, so twice unless --repeat is given.
   [[ $REPEAT_GIVEN == 0 ]] && OPT_REPEAT=2
   CMD_NAME=call
   local text=$*
-  # 부를 때마다 두 번 반복하므로 짧아야 한다. 긴 문구를 쓰면 call 하나가 10초를 넘는다.
+  # Keep it short: it is spoken twice, and a long one makes a call exceed 10 s.
   [[ -z ${text// } ]] && text=$NAUTICE_CALL_MESSAGE
   cmd_alert "$text"
 }
@@ -543,8 +521,7 @@ cmd_doctor() {
   if command -v flock >/dev/null; then printf '  %-12s %s\n' flock "$(command -v flock)"
   else printf '  %-12s 없음 — mkdir 락으로 대체\n' flock; fi
 
-  # 시각 채널은 선택이라 없어도 doctor 를 실패로 보지 않는다. 다만 --channel 을
-  # 주면 그 자리에서 죽으므로 여기서 미리 밝힌다.
+  # The visual channel is optional: a missing backend is reported, not failed.
   local vb; vb=$(visual_backend)
   if command -v "$vb" >/dev/null; then printf '  %s %s\n' '배너        ' "$(command -v "$vb")"
   else printf '  %s 없음 (%s) — --channel visual 을 못 쓴다\n' '배너        ' "$vb"; fi
@@ -556,17 +533,14 @@ cmd_doctor() {
       "$(find "$NAUTICE_CACHE" \( -name '*.aiff' -o -name '*.wav' \) | wc -l | tr -d ' ')" \
       "$(du -sh "$NAUTICE_CACHE" 2>/dev/null | cut -f1)"
   else printf ' (아직 없음)\n'; fi
-  # --plan 과 같은 서식으로 찍는다. %s 로 그냥 흘리면 NAUTICE_RATE=1.0 이 한쪽은
-  # "1.0", 다른 쪽은 "1" 로 나와 같은 기본값이 달라 보인다.
+  # Same %.3f format as --plan; with %s, 1.0 prints as "1.0" here but "1" on Windows.
   printf '  %s vol=%.3f rate=%.3f\n' '기본값      ' "$NAUTICE_VOL" "$NAUTICE_RATE"
-  # 어느 언어에 보이스가 있는지 밝힌다. 없는 언어는 다른 보이스로 떨어지는데
-  # -q 를 쓰는 훅에서는 그 사실이 안 보인다 (docs/cli.md).
+  # Languages with a voice. Others fall back silently under -q, so say it here.
   printf '  %s %s\n' '보이스 언어 ' "$(voice_table | cut -f2 | sort -u | tr '\n' ' ')"
 
   if [[ $PLATFORM == macos ]]; then
-    # compact/eloquence 는 저용량 온디바이스 합성이다. 알림으로 쓸 만한 품질은
-    # 시스템 설정 > 손쉬운 사용 > 음성 콘텐츠 > 시스템 음성 > 음성 관리 에서
-    # 받는 (Premium) / (Enhanced) 쪽이다.
+    # Built-in compact/eloquence voices are low quality. Premium/Enhanced ones
+    # come from System Settings > Accessibility > Spoken Content > Manage Voices.
     local hi; hi=$(voice_list ko | grep -c -E '\((Premium|Enhanced)\)' || true)
     if (( hi > 0 )); then printf '  %s 한국어 %s개\n' '고품질      ' "$hi"
     else printf '  %s 없음 — 시스템 설정 > 손쉬운 사용 > 음성 콘텐츠 > 음성 관리\n' '고품질      '; fi
@@ -624,19 +598,19 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
 USAGE
 }
 
-# ── 인자 ────────────────────────────────────────────────────────────────────
+# ── Arguments ───────────────────────────────────────────────────────────────
 OPT_VOICE='' OPT_VOL='' OPT_RATE='' OPT_TONE='' OPT_CHANNEL='' OPT_LANG=''
 OPT_REPEAT=1 OPT_GAP=0.4 OPT_QUIET=0 OPT_ASYNC=0 OPT_HOLD=0 OPT_PLAN=0
 CMD_NAME=''
 REPEAT_GIVEN=0
 ARGS=()
 
-# 받아들이는 문법을 못박는다. awk 의 비교에만 맡기면 "0,4" 가 0 으로, "0.4abc" 가
-# 0.4 로 조용히 통과한다 — 볼륨이 말없이 0 이 되는 식이다. ps1 과 같은 문법이다.
+# Pin the accepted syntax (same as the ps1 side). awk alone would silently read
+# "0,4" as 0 and "0.4abc" as 0.4 — a volume quietly becoming 0.
 is_num() { [[ $1 =~ ^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; }
 is_int() { [[ $1 =~ ^[+-]?[0-9]+$ ]]; }
 
-# 범위는 awk 로 잰다. (( )) 는 소수를 못 받고 "08" 을 8진수로 읽는다.
+# Range check in awk: (( )) rejects decimals and reads "08" as octal.
 in_range() { awk -v v="$1" -v lo="$2" -v hi="$3" 'BEGIN { exit !(v >= lo && v <= hi) }'; }
 
 check_num() {
@@ -645,17 +619,16 @@ check_num() {
   in_range "$v" "$lo" "$hi" || die "$label 은 $lo ~ $hi 이다: $v"
 }
 
-# 반복 횟수는 정수여야 한다. 소수가 들어오면 for (( )) 가 "arithmetic syntax
-# error" 로 죽고 PowerShell 은 [int] 로 반올림해 그만큼 재생한다 — 같은 명령이
-# OS 마다 다르게 깨지므로 문법에서 잘라낸다.
+# --repeat must be an integer. A decimal would crash for (( )) here and be
+# rounded by [int] on Windows — the same command breaking differently per OS.
 check_int() {
   local label=$1 v=$2 lo=$3 hi=$4
   is_int "$v" || die "$label 은 정수다: $v"
   in_range "$v" "$lo" "$hi" || die "$label 은 $lo ~ $hi 이다: $v"
 }
 
-# set -u 라 값이 빠진 옵션은 $2 에서 "unbound variable" 로 죽는다. 종료코드는 1 로
-# 맞지만 사용자가 보는 건 bash 의 내부 오류다. 먼저 걸러서 제 문구로 죽는다.
+# Under set -u a missing option value dies as "unbound variable" at $2 — right
+# exit code, but a bash internal error. Check first and fail with our message.
 need_val() { (($# >= 2)) || die "$1 에 값이 없다"; }
 
 while (($#)); do
@@ -696,8 +669,8 @@ case $CHANNEL in
   *) die "--channel 은 sound | visual | both 다: $CHANNEL" ;;
 esac
 
-# 훅에서 쓰려면 에이전트를 막지 않아야 한다. 인자를 다 검사한 뒤에 떼어내므로
-# 인자가 틀렸으면 떼어내기 전에 여기서 죽는다.
+# Hooks must not block the agent. Arguments are validated before detaching, so
+# bad input still fails here with exit 1.
 detach() {
   local args=("$1"); shift
   [[ -n $OPT_VOICE ]] && args+=(--voice "$OPT_VOICE")

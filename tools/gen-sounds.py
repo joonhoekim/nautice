@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""share/sounds/*.wav 를 만든다. 표준 라이브러리만 쓴다.
+"""Generate share/sounds/*.wav. Standard library only.
 
-세 OS 가 같은 소리를 내야 알림의 의미가 기계마다 흔들리지 않는다. macOS 의
-/System/Library/Sounds 와 Windows 의 C:\\Windows\\Media 는 목록도 이름도 서로
-달라서 공통 이름표를 얹을 수 없다 — 그래서 직접 합성해 번들로 넣는다.
+A tone must mean the same thing on every OS. macOS's /System/Library/Sounds and
+Windows's C:\\Windows\\Media differ in both contents and names, so no common set
+of names fits both — the sounds are synthesised and bundled instead.
 """
 import math
 import struct
@@ -13,23 +13,23 @@ from pathlib import Path
 RATE = 44100
 OUT = Path(__file__).resolve().parent.parent / "share" / "sounds"
 
-# 이름표 -> [(주파수 Hz, 길이 초, 시작 시각 초), ...]
+# name -> [(frequency Hz, duration s, start s), ...]
 TONES = {
-    # 올라가는 장3화음. 끝났다/성공.
+    # Rising major triad: done / success.
     "ok":     [(1046.5, 0.12, 0.00), (1318.5, 0.12, 0.09), (1568.0, 0.30, 0.18)],
-    # 내려가는 두 음, 낮게. 실패.
+    # Two low falling notes: failure.
     "error":  [(440.0, 0.16, 0.00), (329.6, 0.36, 0.14)],
-    # 같은 음 두 번. 주의.
+    # Same note twice: warning.
     "warn":   [(698.5, 0.11, 0.00), (698.5, 0.22, 0.17)],
-    # 올라가는 두 음. 묻는 억양 — 사람의 응답이 필요할 때.
+    # Two rising notes, a questioning tone: a human's answer is needed.
     "ask":    [(587.3, 0.11, 0.00), (880.0, 0.30, 0.10)],
-    # 짧은 한 음. 시작.
+    # One short note: start.
     "start":  [(784.0, 0.14, 0.00)],
-    # 한 음, 길게 울림. 범용 알림.
+    # One long ringing note: general notification.
     "notify": [(1046.5, 0.38, 0.00)],
 }
 
-ATTACK = 0.004  # 이보다 짧으면 파형이 급히 서서 딸깍 소리가 난다
+ATTACK = 0.004  # shorter attacks click
 
 
 def render(parts):
@@ -43,15 +43,15 @@ def render(parts):
             if s0 + i >= n:
                 break
             t = i / RATE
-            # 지수 감쇠. 종을 친 소리에 가깝게 들린다.
+            # Exponential decay, close to a struck bell.
             env = math.exp(-4.5 * t / dur)
             if t < ATTACK:
                 env *= t / ATTACK
-            # 2배음을 약하게 섞어야 순수 사인보다 작은 스피커에서 잘 들린다.
+            # A weak 2nd harmonic carries better than a pure sine on small speakers.
             v = math.sin(2 * math.pi * freq * t) + 0.22 * math.sin(4 * math.pi * freq * t)
             buf[s0 + i] += v * env * 0.34
     peak = max(abs(x) for x in buf) or 1.0
-    scale = 0.89 / peak  # 1.0 에 붙이면 재생기에 따라 클리핑한다
+    scale = 0.89 / peak  # normalising to 1.0 clips on some players
     return b"".join(struct.pack("<h", int(max(-1.0, min(1.0, x * scale)) * 32767)) for x in buf)
 
 

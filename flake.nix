@@ -1,10 +1,10 @@
 {
-  description = "nautice — 에이전트가 사람의 주의를 끄는 알림 CLI";
+  description = "nautice — a notification CLI that lets an agent get a human's attention";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
-  # x86_64-darwin 은 빠져 있다 — nixpkgs-unstable 이 Intel Mac 평가를 거부한다
-  # (릴리스 노트 x86_64-darwin-26.11). 필요하면 nixpkgs-26.05-darwin 을 쓴다.
+  # No x86_64-darwin: nixpkgs-unstable no longer evaluates Intel Macs (release
+  # note x86_64-darwin-26.11). Use nixpkgs-26.05-darwin if needed.
 
   outputs = { self, nixpkgs }:
     let
@@ -14,11 +14,9 @@
       packages = forAll (pkgs:
         let
           inherit (pkgs) lib stdenv;
-          # macOS 는 say/afplay 가 OS 내장이라 넣을 게 없다. Linux 는 TTS 백엔드가
-          # 없으면 아무것도 못 하므로 espeak-ng 를 딸려 보낸다. 재생기는 시스템이
-          # 준다 (PipeWire 의 pw-play, PulseAudio 의 paplay, ALSA 의 aplay).
-          # Linux 는 TTS 도 배너도 시스템이 안 준다. macOS 는 say·afplay·osascript 가
-          # 다 OS 내장이라 넣을 게 없다.
+          # macOS ships say, afplay and osascript. Linux gets espeak-ng (TTS) and
+          # libnotify (banners); the audio player comes from the system
+          # (pw-play, paplay or aplay).
           runtime = [ pkgs.flock ]
             ++ lib.optionals stdenv.hostPlatform.isLinux [ pkgs.espeak-ng pkgs.libnotify ];
         in rec {
@@ -41,14 +39,14 @@
               install -Dm755 bin/nautice $out/bin/nautice
               mkdir -p $out/share/nautice/sounds
               cp share/sounds/*.wav $out/share/nautice/sounds/
-              # bin/nautice 는 자기 위치에서 ../share/nautice/sounds 를 찾는다.
+              # bin/nautice finds ../share/nautice/sounds relative to itself.
               wrapProgram $out/bin/nautice \
                 --prefix PATH : ${lib.makeBinPath runtime}
               runHook postInstall
             '';
 
             meta = {
-              description = "에이전트가 사람의 주의를 끄는 알림 CLI";
+              description = "Notification CLI that lets an agent get a human's attention";
               mainProgram = "nautice";
               license = lib.licenses.mit;
               platforms = lib.platforms.darwin ++ lib.platforms.linux;

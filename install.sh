@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# nautice 설치 (macOS · Linux). Windows 는 install.ps1 이다.
-# 동작 계약은 docs/install.md 가 단일 출처다 — 양쪽을 같이 고쳐야 한다.
+# Installs nautice (macOS, Linux). Windows: install.ps1.
+# docs/install.md is the contract for both; change them together.
 #
 #   curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | bash
 set -euo pipefail
@@ -14,13 +14,12 @@ ASSET=nautice-unix.tar.gz
 say()  { printf 'nautice: %s\n' "$*"; }
 die()  { printf 'nautice: %s\n' "$*" >&2; exit 1; }
 
-# curl | bash 는 stdin 이 파이프다. 여기서 read 를 부르면 스크립트 자신의 남은
-# 본문을 읽어 먹는다 — 그래서 이 스크립트는 아무것도 묻지 않고 전부
-# 환경변수로 받는다 (docs/install.md).
+# Under curl | bash, stdin is the script itself: `read` would eat the rest of
+# it. Never prompt; everything comes from environment variables.
 
-# ── 지우기 ──────────────────────────────────────────────────────────────────
+# ── Uninstall ───────────────────────────────────────────────────────────────
 if [[ ${NAUTICE_UNINSTALL:-} == 1 ]]; then
-  # $PREFIX 자체는 남긴다 — 남의 것이 같이 들어 있는 디렉터리다.
+  # Leave $PREFIX itself: it is shared with other software.
   rm -f  "$PREFIX/bin/nautice" "$PREFIX/bin/nautice.ps1" "$PREFIX/bin/nautice.cmd"
   rm -rf "$PREFIX/share/nautice"
   say "지웠다: $PREFIX"
@@ -28,10 +27,9 @@ if [[ ${NAUTICE_UNINSTALL:-} == 1 ]]; then
   exit 0
 fi
 
-# ── 받기 ────────────────────────────────────────────────────────────────────
+# ── Download ────────────────────────────────────────────────────────────────
 fetch() {
-  # -f 가 없으면 404 페이지의 HTML 이 그대로 파일에 담긴다. 그 뒤 tar 가
-  # 엉뚱한 소리로 죽어서 무엇이 잘못됐는지 알 수 없게 된다.
+  # Without -f a 404 page is saved as the archive and tar fails confusingly.
   if   command -v curl >/dev/null 2>&1; then curl -fsSL -o "$2" -- "$1"
   elif command -v wget >/dev/null 2>&1; then wget -qO  "$2" -- "$1"
   else die "curl 도 wget 도 없다"
@@ -52,7 +50,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 tarball="$TMP/$ASSET"
 if [[ -n $ARCHIVE ]]; then
-  # 릴리스가 없어도 실제 설치 경로를 돌려 보려는 구멍이다 (CI 가 쓴다).
+  # Lets CI exercise the real install path without a release.
   if [[ -f $ARCHIVE ]]; then cp -- "$ARCHIVE" "$tarball"
   else fetch "$ARCHIVE" "$tarball" || die "못 받았다: $ARCHIVE"
   fi
@@ -71,12 +69,12 @@ else
     [[ $got == "$want" ]] || die "해시가 다르다 (기대 $want, 실제 $got)"
     say "해시 확인됨"
   else
-    # 해시 도구가 없다고 설치를 막지는 않는다. 다만 조용히 넘어가지 않는다.
+    # Do not block the install on a missing tool, but say so.
     say "sha256 도구가 없어 검증을 건너뛴다 (sha256sum / shasum)"
   fi
 fi
 
-# ── 풀고 복사 ───────────────────────────────────────────────────────────────
+# ── Extract and copy ────────────────────────────────────────────────────────
 tar xzf "$tarball" -C "$TMP" || die "아카이브를 못 풀었다 (받다 끊겼을 수 있다)"
 src=$(find "$TMP" -maxdepth 1 -type d -name 'nautice-*' | head -1)
 [[ -n $src && -f $src/bin/nautice ]] || die "아카이브 안에 bin/nautice 가 없다"
@@ -86,24 +84,24 @@ cp -f "$src/bin/nautice" "$PREFIX/bin/nautice"
 chmod 755 "$PREFIX/bin/nautice"
 cp -f "$src"/share/nautice/sounds/*.wav "$PREFIX/share/nautice/sounds/"
 
-# 설치가 됐다는 것은 그 자리의 nautice 가 돈다는 뜻이다. doctor 는 백엔드가
-# 없어도 1 을 내므로 여기서 보지 않는다 (docs/install.md 의 종료 코드).
+# Installed means the installed copy runs. doctor's exit code reflects missing
+# backends, not a failed install, so it is not checked.
 ver=$("$PREFIX/bin/nautice" --version) || die "설치본이 --version 을 못 냈다"
 say "설치됨: $PREFIX/bin/nautice ($ver)"
 
-# ── PATH 안내 ───────────────────────────────────────────────────────────────
-# 셸 rc 파일은 건드리지 않는다. 남의 설정이고, 인스톨러가 쓴 줄은 낡아도
-# 아무도 고치지 않는다 (docs/install.md).
+# ── PATH hint ───────────────────────────────────────────────────────────────
+# Never edit shell rc files: they belong to the user, and lines written by an
+# installer go stale unnoticed.
 case ":${PATH:-}:" in
   *":$PREFIX/bin:"*) ;;
   *)
     say "$PREFIX/bin 이 PATH 에 없다. 셸 설정에 이 줄을 붙인다:"
-    # shellcheck disable=SC2016  # $PATH 는 사용자가 붙여 넣을 글자 그대로다
+    # shellcheck disable=SC2016  # $PATH is literal text for the user to paste
     printf '\n  export PATH="%s/bin:$PATH"\n\n' "$PREFIX" ;;
 esac
 
-# ── 무엇이 없는지 ───────────────────────────────────────────────────────────
-# 런타임 의존성은 깔지 않는다. doctor 가 무엇이 없는지 말하는 것이 그 일이다.
+# ── What is missing ─────────────────────────────────────────────────────────
+# Runtime dependencies are not installed; doctor reports what is missing.
 echo
 "$PREFIX/bin/nautice" doctor || true
 echo

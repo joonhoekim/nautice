@@ -1,39 +1,32 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    nautice — 에이전트가 사람의 주의를 끄는 알림 CLI (Windows).
+    nautice — a notification CLI that lets an agent get a human's attention (Windows).
 .DESCRIPTION
-    macOS / Linux 구현은 bin/nautice 에 있다. 동작 계약은 docs/cli.md 가 단일 출처다.
-    양쪽을 같이 고쳐야 하며, test/conformance 가 어긋남을 잡는다.
+    The macOS / Linux implementation is bin/nautice. docs/cli.md is the contract
+    for both; change them together, test/conformance catches divergence.
 #>
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# 출력이 파이프나 파일로 갈 때 PowerShell 은 이 인코딩으로 바이트를 쓴다. 기본값은
-# ANSI 코드페이지(이 기계는 1252)라 한글이 표시가 아니라 **바이트째** '?'(0x3f) 로
-# 바뀐다 — 훅 로그나 `--plan` 출력을 받아 보면 `text=??? ?????` 가 남는다. 콘솔로
-# 직접 나갈 때는 WriteConsoleW 를 타서 멀쩡하므로 눈으로는 안 보이는 고장이다.
-# 리다이렉트된 핸들에는 SetConsoleOutputCP 를 부르지 않아 부모 콘솔의 코드페이지는
-# 건드리지 않는다 (CP437 콘솔에서 실측).
+# Redirected output is encoded with this; the ANSI default (e.g. 1252) turns
+# Korean into literal '?' bytes in hook logs and --plan output, while console
+# output looks fine. Does not change the parent console's code page (checked on CP437).
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
-# 숫자 파싱과 서식을 문화권에서 뗀다. 소수점이 쉼표인 문화권에서는
-# [double]::TryParse("0.4") 가 조용히 4 를 내놓고(`--vol 0.4` 가 최대 음량이 된다)
-# "{0:F3}" -f 0.4 는 "0,400" 을 찍어 적합성 비교까지 깨진다 (de-DE·fr-FR 실측).
-# 부르는 곳마다 InvariantCulture 를 넘기는 방식은 한 군데만 빠뜨려도 다시 새므로
-# 스레드 문화권 자체를 바꾼다.
-# 보이스 폴백은 사용자의 실제 지역 설정을 봐야 하니 바꾸기 전에 붙잡아 둔다.
+# With a comma decimal mark, [double]::TryParse("0.4") quietly gives 4 (max
+# volume) and "{0:F3}" prints "0,400" (de-DE, fr-FR). Switch the whole thread
+# to InvariantCulture; keep the real culture for the language fallback.
 $SystemCulture = [Globalization.CultureInfo]::CurrentCulture
 [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
 
 $VERSION = '0.4.0'
 
-# SAPI 의 Rate 는 -10..10 이고 속도는 대략 3^(Rate/10) 배다. 배속 1.0 이 Rate 0.
+# SAPI Rate is -10..10 and speed is roughly 3^(Rate/10); rate 1.0 is Rate 0.
 $RateBase = 3
 
-# 없으면 빈 문자열. Get-Env 는 기본값을 인자로 먼저 계산하므로 언어별 이름처럼
-# 이름이 동적인 자리에는 이쪽을 쓴다.
+# Empty string when unset; for dynamic names like NAUTICE_VOICE_<LANG>.
 function Get-EnvOrEmpty($name) {
     $v = [Environment]::GetEnvironmentVariable($name)
     if ([string]::IsNullOrWhiteSpace($v)) { return '' }
@@ -54,32 +47,26 @@ $Defaults = @{
     Channel = Get-Env 'NAUTICE_CHANNEL' 'sound'
 }
 
-# 어느 에이전트가 부르는지는 쓰는 사람이 정한다. 기본값은 중립이다 — 이 도구는
-# 특정 에이전트에 묶이지 않는다. 부를 때마다 두 번 반복하므로 짧아야 한다.
+# Neutral on purpose: the tool is not tied to any agent. Spoken twice, so short.
 $CallMessage = Get-Env 'NAUTICE_CALL_MESSAGE' '에이전트가 부릅니다'
 
 function Die($msg) { [Console]::Error.WriteLine("nautice: $msg"); exit 1 }
 
-# ── 인자 파싱 ───────────────────────────────────────────────────────────────
-# PowerShell 의 기본 파라미터 바인딩은 이름을 대소문자 구분 없이 맞추므로
-# -v(보이스) 와 -V(볼륨) 를 구분하지 못한다. docs/cli.md 의 계약을 그대로
-# 지키려면 $args 를 직접 훑어야 한다. -ceq 가 대소문자를 구분한다.
+# ── Argument parsing ────────────────────────────────────────────────────────
+# PowerShell parameter binding is case-insensitive and cannot tell -v (voice)
+# from -V (volume), so $args is parsed by hand with case-sensitive -ceq.
 $ValueOpts = @('-v', '--voice', '-V', '--vol', '-r', '--rate',
                '-t', '--tone', '-n', '--repeat', '-g', '--gap',
                '-c', '--channel', '-l', '--lang')
 
-# [double] 캐스트를 그냥 쓰면 `-r abc` 가 .NET 의 변환 예외 스택을 사용자에게
-# 뱉는다. bash 쪽은 awk 가 범위를 재다 실패해 제 문구로 죽으므로 여기서 맞춘다.
+# A bare [double] cast would show `-r abc` as a .NET exception stack.
 function ConvertTo-Num([string] $v, [string] $label) {
-    # 받아들이는 문법을 정규식으로 못박는다 — 문화권에 안 기대려는 것인데 판정을
-    # 다시 문화권 타는 파서에 맡기면 같은 자리로 돌아온다.
+    # Pin the syntax with a regex; a culture-aware parser would reintroduce the bug.
     if ($v -notmatch '^[+-]?(\d+(\.\d*)?|\.\d+)$') { Die "$label 은 숫자다: $v" }
     return [double]::Parse($v, [Globalization.CultureInfo]::InvariantCulture)
 }
 
-# 반복 횟수는 정수여야 한다. [int] 캐스트는 2.7 을 조용히 3 으로 올려 세 번 내고
-# bash 쪽은 for (( )) 가 산술 오류로 죽는다 — 같은 명령이 OS 마다 다르게 깨지므로
-# 문법에서 잘라낸다.
+# --repeat must be an integer: [int] would round 2.7 to 3, while bash crashes.
 function ConvertTo-Int([string] $v, [string] $label) {
     if ($v -notmatch '^[+-]?\d+$') { Die "$label 은 정수다: $v" }
     return [int]::Parse($v, [Globalization.CultureInfo]::InvariantCulture)
@@ -96,9 +83,8 @@ function Parse-Args([string[]] $argv) {
     $i = 0
     while ($i -lt $argv.Count) {
         $a = $argv[$i]
-        # switch 본문이 $argv[$i + 1] 을 먼저 읽으므로 값이 빠진 걸 여기서 걸러야
-        # 한다. 안 그러면 `nautice say -r` 이 .NET 의 IndexOutOfRange 스택을 그대로
-        # 사용자에게 뱉는다. -ccontains 가 -v 와 -V 를 구분한다.
+        # Catch a missing value before the switch reads $argv[$i + 1], or
+        # `nautice say -r` shows an IndexOutOfRange stack. -ccontains is case-sensitive.
         if (($ValueOpts -ccontains $a) -and ($i + 1 -ge $argv.Count)) { Die "$a 에 값이 없다" }
         $needsValue = $true
         switch -CaseSensitive ($a) {
@@ -136,9 +122,8 @@ function Assert-Range($value, $lo, $hi, $label) {
     if ($value -lt $lo -or $value -gt $hi) { Die "$label 은 $lo ~ $hi 이다: $value" }
 }
 
-# ── 단위 환산 ───────────────────────────────────────────────────────────────
-# 계약은 배속(1.0 = 보통). SAPI 는 -10..10 이고 속도가 3^(Rate/10) 배이므로
-# 역함수 10*log3(배속) 으로 환산하고 범위를 자른다.
+# ── Unit conversion ─────────────────────────────────────────────────────────
+# Multiplier -> SAPI Rate: the inverse of 3^(Rate/10), clamped to -10..10.
 function ConvertTo-SapiRate([double] $multiplier) {
     if ($multiplier -le 0) { return 0 }
     $r = [Math]::Round(10 * [Math]::Log($multiplier, $RateBase))
@@ -149,24 +134,23 @@ function ConvertTo-SapiVolume([double] $vol) {
     return [int][Math]::Max(0, [Math]::Min(100, [Math]::Round($vol * 100)))
 }
 
-# ── 언어 판정 ───────────────────────────────────────────────────────────────
-# 문자 계열이 곧 언어다. 순서가 곧 우선순위이고 docs/cli.md 의 표와 같아야 한다 —
-# 가나가 있으면 한자가 같이 있어도 일본어다. .NET 정규식의 범위는 UTF-16 코드
-# 단위를 그대로 비교하므로 문화권을 타지 않는다.
+# ── Language detection ──────────────────────────────────────────────────────
+# Script -> language. Order is priority and must match docs/cli.md (kana wins
+# over Han). .NET regex ranges compare UTF-16 code units, culture-free.
 $ScriptLangs = @(
-    @{ Lang = 'ko'; Re = '[\uAC00-\uD7A3]' }   # 한글 음절
-    @{ Lang = 'ja'; Re = '[\u3040-\u30FF]' }   # 가나
-    @{ Lang = 'zh'; Re = '[\u4E00-\u9FFF]' }   # 한자
-    @{ Lang = 'ru'; Re = '[\u0400-\u04FF]' }   # 키릴
-    @{ Lang = 'el'; Re = '[\u0370-\u03FF]' }   # 그리스
-    @{ Lang = 'ar'; Re = '[\u0600-\u06FF]' }   # 아랍
-    @{ Lang = 'he'; Re = '[\u0590-\u05FF]' }   # 히브리
-    @{ Lang = 'th'; Re = '[\u0E00-\u0E7F]' }   # 태국
-    @{ Lang = 'hi'; Re = '[\u0900-\u097F]' }   # 데바나가리
+    @{ Lang = 'ko'; Re = '[\uAC00-\uD7A3]' }   # Hangul syllables
+    @{ Lang = 'ja'; Re = '[\u3040-\u30FF]' }   # kana
+    @{ Lang = 'zh'; Re = '[\u4E00-\u9FFF]' }   # Han
+    @{ Lang = 'ru'; Re = '[\u0400-\u04FF]' }   # Cyrillic
+    @{ Lang = 'el'; Re = '[\u0370-\u03FF]' }   # Greek
+    @{ Lang = 'ar'; Re = '[\u0600-\u06FF]' }   # Arabic
+    @{ Lang = 'he'; Re = '[\u0590-\u05FF]' }   # Hebrew
+    @{ Lang = 'th'; Re = '[\u0E00-\u0E7F]' }   # Thai
+    @{ Lang = 'hi'; Re = '[\u0900-\u097F]' }   # Devanagari
 )
 
-# 라틴 문자권 언어. 로캘이 이 안에 있을 때만 라틴 문구의 기본 언어로 쓴다 —
-# 한국어 로캘에서 영어 문구를 한국어 보이스가 읽는 일을 막는다.
+# The locale decides Latin text only when it is one of these, so a Korean
+# locale does not read English in Korean.
 $LatinLangs = @(
     'af','ca','cs','cy','da','de','en','es','et','eu','fi','fr','ga','gl','hr',
     'hu','id','is','it','lt','lv','ms','nb','nl','nn','no','pl','pt','ro','sk',
@@ -177,30 +161,26 @@ function Resolve-Lang([hashtable] $o, [string] $text) {
     $want = if ($o.Lang) { $o.Lang } else { $Defaults.Lang }
     if ($want -cne 'auto') { return $want }
     foreach ($e in $ScriptLangs) { if ($text -match $e.Re) { return $e.Lang } }
-    # 라틴이다. 글에서는 못 가리므로 OS 로캘을 본다. 문화권은 Invariant 로
-    # 바꾸기 전에 붙잡아 둔 값이다.
+    # Latin script: the text cannot tell, so use the OS culture (saved before
+    # the switch to InvariantCulture).
     $loc = $SystemCulture.TwoLetterISOLanguageName
     if ($loc -and ($LatinLangs -contains $loc)) { return $loc }
     return 'en'
 }
 
-# ── 시각 채널 (배너) ────────────────────────────────────────────────────────
-# NotifyIcon 의 벌룬은 프로세스가 트레이 아이콘을 잡고 있는 동안만 뜬다. 바로
-# Dispose 하면 아무것도 안 보인다. 그래서 띄워 두고 소리를 낸 뒤 정리하며,
-# 소리가 더 짧게 끝났으면 남은 만큼 기다린다. macOS·Linux 는 알림 데몬에 넘기고
-# 바로 끝나므로 이 대기가 없다 — docs/cli.md 의 플랫폼 차이에 적혀 있다.
+# ── Visual channel (banner) ─────────────────────────────────────────────────
+# A NotifyIcon balloon shows only while the process holds the tray icon;
+# disposing at once shows nothing. Hold it through the sound, then at least
+# $BannerHoldMs. macOS/Linux hand off to a daemon and need no wait.
 $BannerHoldMs = 2000
 
-# --hold 는 벌룬으로 못 한다. Win10 부터 벌룬은 OS 가 토스트로 바꿔 띄우는데 그
-# 수명은 OS 가 정해서 ShowBalloonTip 의 시간 인자가 무시된다. 사람이 지울 때까지
-# 남기려면 scenario="reminder" 토스트여야 하고, 그건 WinRT 로만 만든다.
-#
-# 토스트는 등록된 AppUserModelID 가 있어야 뜬다. 없는 ID 를 주면 예외도 없이
-# 아무것도 안 뜨므로, 모든 Windows 에 있는 Windows PowerShell 의 것을 빌린다.
-# 알림 설정에서 그 앱 아래로 묶이는 값을 치른다 — docs/cli.md 에 적어 뒀다.
+# --hold needs a WinRT toast with scenario="reminder": since Windows 10 the OS
+# decides balloon lifetime and ignores ShowBalloonTip's timeout.
+# A toast needs a registered AppUserModelID — an unknown one shows nothing and
+# raises nothing — so borrow Windows PowerShell's, present on every Windows.
 $ToastAumid = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
 
-# reminder 는 액션이 하나도 없으면 무시되고 그냥 사라지는 토스트가 된다.
+# A reminder with no actions degrades to an ordinary, expiring toast.
 function Show-HeldToast([string] $text) {
     try {
         [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
@@ -219,7 +199,7 @@ function Show-HeldToast([string] $text) {
 
 function New-Banner([hashtable] $o, [string] $text) {
     if ($o.Channel -ceq 'sound') { return $null }
-    # 토스트는 알림 플랫폼이 들고 있으므로 프로세스가 붙잡아 줄 필요가 없다.
+    # The notification platform owns the toast; no need to hold the process.
     if ($o.Hold) { Show-HeldToast $text; return $null }
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
@@ -238,12 +218,12 @@ function Close-Banner($b) {
     $b.Icon.Dispose()
 }
 
-# 상태 줄에 배너를 같이 냈다는 것을 덧붙인다.
+# Suffix for the status line when a banner was shown too.
 function Get-ChanNote([hashtable] $o) {
     if ($o.Channel -ceq 'sound') { return '' } else { return ' +배너' }
 }
 
-# ── 효과음 ──────────────────────────────────────────────────────────────────
+# ── Sounds ──────────────────────────────────────────────────────────────────
 function Get-SoundsDir {
     $env_ = [Environment]::GetEnvironmentVariable('NAUTICE_SOUNDS')
     if (-not [string]::IsNullOrWhiteSpace($env_)) { return $env_ }
@@ -255,7 +235,7 @@ function Get-SoundsDir {
     Die '번들 효과음을 못 찾았다. NAUTICE_SOUNDS 로 경로를 지정하라'
 }
 
-# 번들을 먼저 본다. 세 OS 가 같은 소리를 내야 알림의 뜻이 기계마다 안 흔들린다.
+# Bundled sounds first, so a tone means the same thing on every OS.
 function Resolve-Sfx([string] $name) {
     if (Test-Path -LiteralPath $name -PathType Leaf) { return (Resolve-Path $name).Path }
     $bundled = Join-Path (Get-SoundsDir) "$name.wav"
@@ -268,8 +248,7 @@ function Resolve-Sfx([string] $name) {
 }
 
 # ── TTS ─────────────────────────────────────────────────────────────────────
-# macOS 와 달리 SAPI 는 볼륨·속도를 합성 시점에 직접 받는다. 파일로 렌더할
-# 이유가 없어서 캐시를 쓰지 않는다 (docs/cli.md 의 플랫폼 차이 참고).
+# SAPI takes volume and rate at synthesis time, so no render-to-file or cache.
 function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
     Add-Type -AssemblyName System.Speech
     $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
@@ -281,10 +260,10 @@ function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
 
     $want = if ($o.Voice) { $o.Voice } else { $Defaults.Voice }
     if ($want -eq 'auto' -or $want -eq 'best') {
-        # NAUTICE_VOICE_KO 처럼 언어별로 못박은 이름이 있으면 그것.
+        # Per-language override such as NAUTICE_VOICE_KO.
         $want = Get-EnvOrEmpty "NAUTICE_VOICE_$($lang.ToUpper())"
     }
-    # Windows 는 품질 등급을 노출하지 않는다. best 는 auto 와 같다.
+    # Windows exposes no quality tiers: best is the same as auto.
     if ($want -eq 'auto' -or $want -eq 'best') { $want = '' }
 
     $pick = $null
@@ -292,9 +271,8 @@ function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
         $pick = $installed | Where-Object { $_.Name -like "*$want*" } | Select-Object -First 1
         if (-not $pick) { Die "그런 보이스가 없다: $want (nautice list voices)" }
     }
-    # 그 언어의 음성으로. 없으면 죽이지 않고 로캘·아무거나로 떨어진다 — 알림
-    # 도구라 억양이 틀린 알림이 알림 없음보다 낫다 (docs/cli.md). Windows 는
-    # 설치된 언어팩의 음성만 보여서 이 자리가 제일 자주 걸린다.
+    # Voice for the language, else fall back rather than fail (docs/cli.md).
+    # Only installed language packs have voices, so this falls back often.
     if (-not $pick) {
         $pick = $installed | Where-Object { $_.Culture.TwoLetterISOLanguageName -eq $lang } | Select-Object -First 1
     }
@@ -307,15 +285,14 @@ function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
 
 function Coalesce($a, $b) { if ($null -eq $a) { return $b } else { return $a } }
 
-# ── 재생 ────────────────────────────────────────────────────────────────────
-# System.Media.SoundPlayer 에는 볼륨이 없다. --vol 은 TTS 에만 걸리고 효과음은
-# 시스템 볼륨으로 난다 (docs/cli.md 의 플랫폼 차이에 적어 둔 의도된 차이다).
+# ── Playback ────────────────────────────────────────────────────────────────
+# SoundPlayer has no volume: --vol applies to TTS only (docs/cli.md).
 function Invoke-Sfx([string] $path) {
     $player = New-Object System.Media.SoundPlayer $path
     try { $player.PlaySync() } finally { $player.Dispose() }
 }
 
-# 한 번의 알림 단위(차임 / 발화 / 둘 다)를 --repeat 회 되풀이한다.
+# Repeat one unit (chime, speech, or both) --repeat times.
 function Invoke-Emit([hashtable] $o, [string] $chime, $synth, [string] $text) {
     for ($i = 1; $i -le $o.Repeat; $i++) {
         if ($chime) { Invoke-Sfx $chime }
@@ -326,10 +303,8 @@ function Invoke-Emit([hashtable] $o, [string] $chime, $synth, [string] $text) {
     }
 }
 
-# 소리를 내지 않고 해석 결과만 찍는다. 앞쪽 블록은 OS 와 무관하게 같아야 하고,
-# backend_* 는 docs/cli.md 의 환산식대로 나와야 한다 — test/conformance 가 본다.
-# 보이스 해석은 System.Speech 를 타므로 여기서는 요구값만 찍는다. lang 은 그
-# 해석의 근거이고 System.Speech 없이 나오므로, voice 와 달리 양쪽을 맞댈 수 있다.
+# The resolved plan, without sound, for test/conformance. voice stays empty
+# (resolving it needs System.Speech); lang is comparable across OSes.
 function Write-Plan([hashtable] $o, [string] $cmd, [string] $tone, [string] $text) {
     $vol  = [double](Coalesce $o.Vol  $Defaults.Vol)
     $rate = [double](Coalesce $o.Rate $Defaults.Rate)
@@ -359,9 +334,9 @@ function Write-Status([hashtable] $o, [string] $line) {
 function Read-Text([hashtable] $o) {
     $text = ($o.Rest -join ' ').Trim()
     if (-not $text -and -not [Console]::IsInputRedirected) { Die '말할 내용이 없다' }
-    # [Console]::In 은 콘솔 입력 코드페이지로 디코드한다. CP437 콘솔에 UTF-8 을
-    # 흘리면 '한글' 이 6 글자 쓰레기가 되고, 그대로 합성돼 엉뚱한 소리가 난다.
-    # --plan 으로는 같은 코드페이지로 되쓰느라 왕복해서 멀쩡해 보인다.
+    # Read stdin as UTF-8 ourselves: [Console]::In decodes with the console code
+    # page and turns Korean into garbage on CP437. --plan round-trips through the
+    # same code page, so the damage is invisible there.
     if (-not $text) {
         $reader = New-Object System.IO.StreamReader ([Console]::OpenStandardInput()), (New-Object System.Text.UTF8Encoding $false)
         try { $text = ($reader.ReadToEnd()).Trim() } finally { $reader.Dispose() }
@@ -370,7 +345,7 @@ function Read-Text([hashtable] $o) {
     return $text
 }
 
-# ── 명령 ────────────────────────────────────────────────────────────────────
+# ── Commands ────────────────────────────────────────────────────────────────
 function Invoke-Say([hashtable] $o) {
     $text = Read-Text $o
     if ($o.Plan) { Write-Plan $o 'say' '' $text; return }
@@ -385,9 +360,9 @@ function Invoke-Say([hashtable] $o) {
 
 function Invoke-Play([hashtable] $o) {
     if ($o.Rest.Count -eq 0) { Die '사운드 이름이나 경로가 필요하다 (nautice list sounds)' }
-    # 효과음에는 문구가 없어 배너에 적을 것이 없다.
+    # A sound has no text to put in a banner.
     if ($o.Channel -cne 'sound') { Die 'play 는 문구가 없어 시각 채널을 못 쓴다 (--channel sound)' }
-    # 해석이 계획보다 먼저다. 없는 사운드는 --plan 에서도 1 로 죽어야 bash 와 같다.
+    # Resolve before planning: an unknown sound fails under --plan too, as in bash.
     $file = Resolve-Sfx $o.Rest[0]
     if ($o.Plan) { Write-Plan $o 'play' $o.Rest[0] ''; return }
     Write-Status $o "play x$($o.Repeat) [$($o.Rest[0])]"
@@ -410,7 +385,7 @@ function Invoke-Alert([hashtable] $o) {
 }
 
 function Invoke-Call([hashtable] $o) {
-    # 사람을 부르는 게 목적이라 한 번으로는 놓치기 쉽다. 따로 지정하지 않으면 두 번.
+    # Calling a human: once is easy to miss, so twice unless --repeat is given.
     if (-not $o.RepeatGiven) { $o.Repeat = 2 }
     $o.PlanName = 'call'
     if ($o.Rest.Count -eq 0) { $o.Rest = @($CallMessage) }
@@ -465,8 +440,7 @@ function Invoke-Doctor([hashtable] $o) {
         } else {
             Write-Output ("  {0,-11} 없음 — 설정 > 시간 및 언어 > 음성 에서 한국어 음성을 추가하라" -f '한국어')
         }
-        # 없는 언어는 다른 음성으로 떨어지는데 -q 를 쓰는 훅에서는 그 사실이
-        # 안 보인다 (docs/cli.md). 여기서 미리 밝힌다.
+        # Languages with a voice. Others fall back silently under -q.
         $langs = @($voices | ForEach-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName } | Sort-Object -Unique)
         Write-Output ("  {0,-11} {1}" -f '보이스 언어', ($langs -join ' '))
     } catch {
@@ -477,15 +451,13 @@ function Invoke-Doctor([hashtable] $o) {
     Write-Output ("  {0,-11} System.Windows.Forms.NotifyIcon — 데스크톱 세션이 있어야 뜬다" -f '배너')
     Write-Output ("  {0,-11} {1}" -f '효과음', (Get-SoundsDir))
     Write-Output ("  {0,-11} 쓰지 않는다 (SAPI 가 볼륨·속도를 직접 받는다)" -f '캐시')
-    # --plan 과 같은 서식으로 찍는다. 그냥 흘리면 [double]1.0 이 "1" 로 나와
-    # bash 쪽의 "1.0" 과 달라 보인다.
+    # Same F3 format as --plan; a bare [double]1.0 prints "1", unlike bash's "1.0".
     Write-Output ("  {0,-11} vol={1:F3} rate={2:F3}" -f '기본값', $Defaults.Vol, $Defaults.Rate)
     exit $ok
 }
 
 function Invoke-Cache([hashtable] $o) {
-    # Windows 는 TTS 를 파일로 렌더하지 않으므로 비울 것이 없다. 그래도 인자는
-    # 계약대로 가린다 — 안 가리면 `cache clera` 같은 오타가 0 으로 통과한다.
+    # Nothing to clear on Windows, but still reject unknown arguments.
     $what = if ($o.Rest.Count -gt 0) { $o.Rest[0] } else { 'info' }
     if ($what -cne 'info' -and $what -cne 'clear') { Die 'cache 대상: info | clear' }
     Write-Output '이 플랫폼은 렌더 캐시를 쓰지 않는다 (SAPI 가 볼륨·속도를 직접 받는다)'
@@ -528,7 +500,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
 '@ | Write-Output
 }
 
-# ── 진입 ────────────────────────────────────────────────────────────────────
+# ── Entry point ─────────────────────────────────────────────────────────────
 $o = Parse-Args $args
 
 Assert-Range $o.Vol    0   10 '--vol'
@@ -546,20 +518,19 @@ if ($o.Channel -cne 'sound' -and $o.Channel -cne 'visual' -and $o.Channel -cne '
     Die "--channel 은 sound | visual | both 다: $($o.Channel)"
 }
 
-# Start-Process 는 -ArgumentList 의 원소를 공백으로 이어 붙이기만 하고 따옴표를
-# 붙이지 않는다. 윈도 보이스 이름에는 공백이 있어서(`Microsoft Heami Desktop`)
-# 그냥 넘기면 자식이 `-v Microsoft` 로 읽고 나머지를 문구로 삼는다 — 에러도 없고
-# 종료코드도 0 인 채로 엉뚱한 보이스가 엉뚱한 문구를 읽는다. 소리는 나므로 귀로도
-# 놓친다. CommandLineToArgvW 규칙대로 직접 감싼다.
+# Start-Process joins -ArgumentList with spaces and no quoting. Voice names
+# contain spaces (`Microsoft Heami Desktop`), so the child would read
+# `-v Microsoft` and speak the rest — exit 0, wrong voice, wrong text.
+# Quote by CommandLineToArgvW rules.
 function Format-CmdArg([string] $a) {
-    # 따옴표 앞의 역슬래시와 닫는 따옴표 앞의 역슬래시만 두 배로 한다.
+    # Double only backslashes before a quote and before the closing quote.
     $s = $a -replace '(\\*)"', '$1$1\"'
     $s = $s -replace '(\\+)$', '$1$1'
     return '"' + $s + '"'
 }
 
-# 훅에서 쓰려면 에이전트를 막지 않아야 한다. 인자를 다 검사한 뒤에 떼어내므로
-# 인자가 틀렸으면 떼어내기 전에 여기서 죽는다.
+# Hooks must not block the agent. Arguments are validated before detaching, so
+# bad input still fails here with exit 1.
 if ($o.Async -and @('say', 'play', 'alert', 'call') -contains $o.Command) {
     $passthru = @($args | Where-Object { $_ -cne '-a' -and $_ -cne '--async' })
     $cmdline = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-q') + $passthru |

@@ -1,9 +1,9 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    nautice 설치 (Windows). macOS / Linux 는 install.sh 다.
+    Installs nautice (Windows). macOS / Linux: install.sh.
 .DESCRIPTION
-    동작 계약은 docs/install.md 가 단일 출처다 — 양쪽을 같이 고쳐야 한다.
+    docs/install.md is the contract for both; change them together.
 
       irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
 #>
@@ -24,8 +24,8 @@ function Get-EnvOr($name, $fallback) {
 function Say($msg)  { Write-Output "nautice: $msg" }
 function Die($msg)  { [Console]::Error.WriteLine("nautice: $msg"); exit 1 }
 
-# 기본값은 NAUTICE_PREFIX 가 없을 때만 만든다. 인자로 넘기면 Join-Path 가 먼저
-# 계산돼서, 지정을 했는데도 %LOCALAPPDATA% 가 없는 데서 그 자리가 터진다.
+# Build the default only when NAUTICE_PREFIX is unset; as an argument, Join-Path
+# would run first and fail where %LOCALAPPDATA% does not exist.
 $Prefix = Get-EnvOr 'NAUTICE_PREFIX' ''
 if (-not $Prefix) {
     if (-not $env:LOCALAPPDATA) { Die '%LOCALAPPDATA% 가 없다. NAUTICE_PREFIX 로 설치 위치를 지정하라' }
@@ -35,13 +35,13 @@ $Version = Get-EnvOr 'NAUTICE_VERSION' 'latest'
 $Archive = Get-EnvOr 'NAUTICE_ARCHIVE' ''
 $BinDir  = Join-Path $Prefix 'bin'
 
-# irm | iex 는 스크립트가 문자열로 들어와 $args 도 $PSCommandPath 도 없다.
-# 고를 것은 전부 환경변수로 받는다 (docs/install.md).
+# Under irm | iex there is no $args or $PSCommandPath; everything comes from
+# environment variables.
 
 # ── PATH ────────────────────────────────────────────────────────────────────
-# 사용자 PATH 는 레지스트리 값이라 파일을 파싱하지 않고 중복 없이 넣고 뺄 수
-# 있다. Windows 에는 ~/.local/bin 같은 관례가 없어서 등록하지 않으면 새 셸에서
-# 못 따라온다 (docs/install.md).
+# The user PATH is a registry value: no file parsing, easy to add and remove
+# without duplicates. Windows has no ~/.local/bin convention, so without it new
+# shells would not find nautice.
 function Split-UserPath {
     $raw = [Environment]::GetEnvironmentVariable('Path', 'User')
     if (-not $raw) { return @() }
@@ -62,9 +62,9 @@ function Remove-UserPath($dir) {
     [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
 }
 
-# ── 지우기 ──────────────────────────────────────────────────────────────────
+# ── Uninstall ───────────────────────────────────────────────────────────────
 if ((Get-EnvOr 'NAUTICE_UNINSTALL' '') -eq '1') {
-    # $Prefix 자체는 남긴다 — 남의 것이 같이 들어 있을 수 있는 디렉터리다.
+    # Leave $Prefix itself: it may be shared with other software.
     foreach ($f in @('nautice', 'nautice.ps1', 'nautice.cmd')) {
         Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $BinDir $f)
     }
@@ -74,10 +74,9 @@ if ((Get-EnvOr 'NAUTICE_UNINSTALL' '') -eq '1') {
     exit 0
 }
 
-# ── 받기 ────────────────────────────────────────────────────────────────────
-# Invoke-WebRequest -OutFile 로 받는다. irm 은 응답을 문자열로 디코드해서
-# nautice.ps1 의 UTF-8 BOM 을 떼어내고 .wav 를 상하게 한다 — 그래서 알맹이는
-# 개별 파일이 아니라 zip 으로 받는다 (docs/install.md).
+# ── Download ────────────────────────────────────────────────────────────────
+# Invoke-WebRequest -OutFile keeps bytes. irm decodes to a string, which strips
+# nautice.ps1's UTF-8 BOM and corrupts .wav — hence one zip, not loose files.
 function Get-File($url, $dest) {
     try {
         $old = $ProgressPreference
@@ -92,7 +91,7 @@ New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 try {
     $zip = Join-Path $tmp $Asset
     if ($Archive) {
-        # 릴리스가 없어도 실제 설치 경로를 돌려 보려는 구멍이다 (CI 가 쓴다).
+        # Lets CI exercise the real install path without a release.
         if (Test-Path -LiteralPath $Archive -PathType Leaf) { Copy-Item -LiteralPath $Archive $zip }
         else { Get-File $Archive $zip }
         Say "아카이브: $Archive (해시 검증 건너뜀)"
@@ -115,7 +114,7 @@ try {
         Say '해시 확인됨'
     }
 
-    # ── 풀고 복사 ───────────────────────────────────────────────────────────
+    # ── Extract and copy ────────────────────────────────────────────────────
     $out = Join-Path $tmp 'x'
     try { Expand-Archive -LiteralPath $zip -DestinationPath $out -Force }
     catch { Die "아카이브를 못 풀었다 (받다 끊겼을 수 있다): $($_.Exception.Message)" }
@@ -131,8 +130,8 @@ try {
     Copy-Item -Force (Join-Path $srcBin '*') $BinDir
     Copy-Item -Force ([IO.Path]::Combine($src.FullName, 'share', 'nautice', 'sounds', '*.wav')) $soundDir
 
-    # 설치가 됐다는 것은 그 자리의 nautice 가 돈다는 뜻이다. doctor 는 백엔드가
-    # 없어도 1 을 내므로 여기서 보지 않는다 (docs/install.md 의 종료 코드).
+    # Installed means the installed copy runs. doctor's exit code reflects missing
+    # backends, not a failed install, so it is not checked.
     $ps1 = Join-Path $BinDir 'nautice.ps1'
     $ver = & $ps1 --version
     if ($LASTEXITCODE -ne 0 -or -not $ver) { Die '설치본이 --version 을 못 냈다' }
@@ -141,7 +140,7 @@ try {
     if (Add-UserPath $BinDir) { Say "PATH 에 넣었다: $BinDir (새 셸부터 반영된다)" }
     else                      { Say "PATH 에 이미 있다: $BinDir" }
 
-    # 런타임 의존성은 깔지 않는다. doctor 가 무엇이 없는지 말하는 것이 그 일이다.
+    # Runtime dependencies are not installed; doctor reports what is missing.
     Write-Output ''
     & $ps1 doctor
     $global:LASTEXITCODE = 0

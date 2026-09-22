@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# 두 구현이 docs/cli.md 의 계약을 똑같이 지키는지 본다.
-#
-# 소리는 비교할 수 없으므로 --plan 이 찍는 해석 결과를 비교한다. OS 와 무관해야
-# 하는 필드는 완전히 같아야 하고, backend_* 는 계약의 환산식대로 나와야 한다.
-# 한쪽 구현만 있는 기계에서는 그쪽만 돌리고 비교는 건너뛴다.
+# Checks that both implementations keep the contract in docs/cli.md.
+# Sound cannot be compared, so this compares what --plan prints. With only one
+# implementation available, that one runs and comparisons are skipped.
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 BASH_IMPL=bin/nautice
 PS_IMPL=bin/nautice.ps1
 
-# OS 와 무관하게 같아야 하는 필드. voice 와 backend_* 는 플랫폼마다 다르다.
+# Fields that must match across OSes (voice and backend_* legitimately differ).
 SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|channel|hold|text|lang)='
 
 pass=0 fail=0
@@ -19,9 +17,8 @@ bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; shift; printf '       %s\n' "
 
 have_bash=0; [[ -x $BASH_IMPL ]] && have_bash=1
 SKIP_WHY='구현 하나만 있다'
-# Git Bash·MSYS 에서 bin/nautice 는 자기가 일하지 않고 nautice.ps1 로 넘긴다.
-# 그대로 두면 ps1 을 양쪽에 대고 비교해 계획 케이스가 공허하게 다 통과하고,
-# 환산식은 macOS·Linux 기대값(배속×175)에 SAPI 값을 대서 없는 실패를 낸다.
+# On Git Bash / MSYS, bin/nautice hands over to nautice.ps1: comparing would
+# pit ps1 against itself, and the bash rate checks would fail on SAPI values.
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     have_bash=0
@@ -32,7 +29,7 @@ PWSH=""
 if command -v pwsh >/dev/null 2>&1; then PWSH=pwsh
 elif command -v powershell >/dev/null 2>&1; then PWSH=powershell
 elif command -v nix >/dev/null 2>&1 && [[ ${NAUTICE_TEST_NIX_PWSH:-1} == 1 ]]; then
-  # 개발 기계에 pwsh 가 없어도 nix 가 있으면 빌려 쓴다.
+  # Borrow pwsh from nix when it is not installed.
   nix shell nixpkgs#powershell -c pwsh -NoProfile -Command 'exit 0' >/dev/null 2>&1 \
     && PWSH="nix-pwsh"
 fi
@@ -49,11 +46,10 @@ run_ps() {
 echo "적합성 — bash=$have_bash ps=$have_ps${PWSH:+ ($PWSH)}"
 echo
 
-# ── 계획 비교 ───────────────────────────────────────────────────────────────
+# ── Plan comparison ─────────────────────────────────────────────────────────
 echo "계획 (OS 무관 필드가 같은가)"
-# --plan 은 케이스 인자보다 **앞**에 둔다. 뒤에 붙이면 `--` 를 쓰는 케이스에서
-# 문구로 먹혀(계약대로다) 소리가 실제로 나고, 양쪽 다 계획을 안 찍어 빈 문자열
-# 끼리 비교하느라 공허하게 통과한다.
+# --plan goes before the case's arguments: after a `--` it would be text, the
+# command would really speak, and two empty plans would compare equal.
 plan_case() {
   local name=$1; shift
   if (( have_bash == 0 || have_ps == 0 )); then
@@ -78,15 +74,15 @@ plan_case 'call 기본 2회'       call
 plan_case 'call 문구 지정'      call "확인 바랍니다"
 plan_case 'call 반복 덮어쓰기'  call -n 1 "한 번만"
 plan_case '-- 뒤는 전부 문구'   say -- "-v 처럼 보이는 문구"
-# 언어 판정 — lang 이 갈라지면 같은 문구가 OS 마다 다른 보이스로 나간다.
+# Language detection: a divergent lang means a different voice per OS.
 plan_case '한글이면 ko'         say "빌드가 끝났습니다"
 plan_case '영어면 en'           say "build finished"
-# 악센트 붙은 라틴 문자는 UTF-8 에서 C3 로 시작한다. 앞 글자가 n(6E)·.(2E) 처럼
-# e 로 끝나는 바이트면 hex 를 붙여 볼 때 ec 가 생겨 한국어로 넘어가던 자리다.
+# Accented Latin starts with C3; after a byte ending in e (n = 6E) a joined hex
+# string shows a false "ec" (Hangul).
 plan_case '악센트 라틴은 en'    say "Renée finished the nüance"
 plan_case '섞이면 ko'           say "build 가 끝났습니다"
-# 문자 계열이 곧 언어다 (docs/cli.md 의 표). bash 는 UTF-8 바이트로, Windows 는
-# UTF-16 범위로 가리므로 경계에서 갈라지기 쉽다.
+# One case per script in docs/cli.md: bash reads UTF-8 bytes, Windows UTF-16
+# ranges, so boundaries are where they can diverge.
 plan_case 'lang 일본어'         say "ビルドが終わりました"
 plan_case 'lang 중국어'         say "构建完成"
 plan_case 'lang 러시아어'       say "Сборка завершена"
@@ -95,12 +91,12 @@ plan_case 'lang 아랍어'         say "اكتمل البناء"
 plan_case 'lang 히브리어'       say "הבנייה הושלמה"
 plan_case 'lang 태국어'         say "การสร้างเสร็จสิ้น"
 plan_case 'lang 힌디어'         say "बिल्ड पूरा हुआ"
-# 가나가 있으면 한자가 같이 있어도 일본어다 — 표의 순서가 이긴다.
+# Kana plus Han is Japanese: table order decides.
 plan_case 'lang 가나+한자는 ja' say "ビルド完了"
 plan_case 'lang 한글+한자는 ko' say "빌드 完了"
 plan_case '--lang 이 이긴다'    say -l de "빌드가 끝났습니다"
 plan_case '--lang 짧은 옵션'    say --lang ja "build finished"
-# 채널 — 배너를 낼지 소리를 낼지는 OS 와 무관하게 같아야 한다.
+# Channel: sound vs. banner must not depend on the OS.
 plan_case 'channel 기본 sound'  say "테스트 문구"
 plan_case 'channel visual'      say -c visual "테스트 문구"
 plan_case 'channel both'        alert -c both -t warn "디스크가 찼습니다"
@@ -108,12 +104,11 @@ plan_case 'channel call both'   call --channel both
 plan_case 'hold 기본 꺼짐'      say -c visual "테스트 문구"
 plan_case 'hold 켜짐'           say -c visual --hold "테스트 문구"
 plan_case 'hold + both'         alert -c both --hold -t warn "디스크가 찼습니다"
-# 배너가 없으면 붙잡을 것도 없다. 1 로 죽이지 않고 조용히 무시하는 것이 계약이다.
+# With no banner there is nothing to hold: --hold is ignored, not rejected.
 plan_case 'hold 는 sound 에서 무해' say --hold "테스트 문구"
 
-# 문구를 인자가 아니라 파이프로 받는 자리. Windows 는 콘솔 코드페이지로 디코드
-# 하면 한글이 쓰레기가 되므로 stdin 을 UTF-8 로 직접 읽는다 — 그게 살아 있는지
-# 본다. 훅이 문구를 파이프로 넘기는 쓰임이 여기에 걸린다.
+# Text from a pipe. Windows must read stdin as UTF-8 itself; decoding with the
+# console code page garbles Korean.
 stdin_case() {
   local name=$1 text=$2; shift 2
   if (( have_bash == 0 || have_ps == 0 )); then
@@ -132,10 +127,9 @@ stdin_case 'stdin 영어'         'build finished'    say
 stdin_case 'stdin alert'        '디스크가 찼습니다' alert -t warn
 echo
 
-# ── 환산식 ──────────────────────────────────────────────────────────────────
+# ── Unit conversion ─────────────────────────────────────────────────────────
 echo "단위 환산 (docs/cli.md 의 식대로인가)"
-# case 를 $( ) 안에 두지 않는다. macOS 의 /bin/bash 는 3.2 라 그 안의 ;; 를
-# "syntax error near unexpected token" 으로 뱉는다 — 4.x 에서만 도는 문법이다.
+# No case inside $( ): bash 3.2 (macOS /bin/bash) fails on its ;; there.
 check_rate() {
   local impl=$1 mult=$2 want=$3 got out
   if [[ $impl == bash ]]; then out=$(run_bash say --plan -r "$mult" x)
@@ -146,13 +140,13 @@ check_rate() {
   else bad "$impl rate $mult" "기대 $want, 실제 $got"; fi
 }
 if (( have_bash )); then
-  # macOS·Linux: 배속 x 175 wpm
+  # macOS / Linux: rate x 175 wpm
   for m in 0.5 1.0 1.5 2.0; do
     check_rate bash "$m" "$(awk -v m="$m" 'BEGIN { printf "%d", m * 175 }')"
   done
 fi
 if (( have_ps )); then
-  # Windows: round(10 * log3(배속)), -10..10 으로 자름
+  # Windows: round(10 * log3(rate)), clamped to -10..10
   for m in 0.5 1.0 1.5 3.0; do
     check_rate ps "$m" "$(awk -v m="$m" 'BEGIN {
       r = 10 * log(m) / log(3)
@@ -163,10 +157,10 @@ if (( have_ps )); then
 fi
 echo
 
-# ── 거부해야 하는 입력 ──────────────────────────────────────────────────────
+# ── Inputs that must be rejected ────────────────────────────────────────────
 echo "잘못된 입력은 양쪽 다 1 로, 제 문구로 죽는가"
-# 종료코드만 보면 .NET 의 변환 예외 스택도 bash 의 unbound variable 도 통과한다 —
-# 실제로 그렇게 새어 나간 적이 있다. 사용자가 본 첫 줄이 우리 문구인지까지 본다.
+# The exit code alone would pass a .NET exception stack or bash's "unbound
+# variable"; the first line must also be our own message.
 reject_case() {
   local name=$1; shift
   local why='' rc msg
@@ -187,20 +181,20 @@ reject_case '모르는 명령'   bogus
 reject_case 'cache 모르는 인자' cache bogus
 reject_case 'list 모르는 인자'  list bogus
 reject_case '없는 사운드'   play NoSuchSound
-# --plan 이 해석을 건너뛰면 훅을 고치다 낸 오타를 여기서 못 잡는다.
+# --plan must resolve sounds too, or a typo in a hook goes unnoticed.
 reject_case '없는 사운드 --plan' play NoSuchSound --plan
 reject_case '없는 톤'       alert -t NoSuchTone x
 reject_case '모르는 채널'   say -c bogus x
 reject_case '모르는 언어'   say -l xyz x
 reject_case '값 빠진 -l'    say -l
-# 효과음에는 문구가 없어 배너에 적을 것이 없다.
+# A sound has no text to put in a banner.
 reject_case 'play 에 visual' play -c visual ok
 reject_case 'play 에 both'   play -c both ok
 reject_case '--repeat 범위' say -n 99 x
 reject_case '--gap 범위'    say -g 99 x
 reject_case '--rate 범위'   say -r 0 x
 reject_case 'play 인자없음' play
-# 값이 빠진 옵션과 숫자 아닌 값은 종료코드만 맞고 문구가 내부 오류였던 자리다.
+# Missing values and non-numbers must fail with our message, not an internal error.
 reject_case '값 빠진 -v'    say -v
 reject_case '값 빠진 -V'    say -V
 reject_case '값 빠진 -r'    say -r
@@ -211,14 +205,14 @@ reject_case '값 빠진 -c'    say -c
 reject_case '--vol 문자'    say -V xyz x
 reject_case '--rate 문자'   say -r abc x
 reject_case '--repeat 문자' say -n q x
-# 소수는 bash 가 산술 오류로, ps 가 반올림 재생으로 갈라지던 자리다.
+# A decimal would crash bash's arithmetic and be rounded by PowerShell.
 reject_case '--repeat 소수' say -n 2.7 x
-# 소수점이 쉼표인 문화권에서 조용히 0 으로 통과하던 자리다.
+# Comma decimals and trailing junk must not slip through as some number.
 reject_case '--vol 쉼표'    say -V 0,4 x
 reject_case '--vol 꼬리'    say -V 0.4abc x
 echo
 
-# ── 도움말이 계약의 옵션을 다 적고 있는가 ───────────────────────────────────
+# ── Help lists every contract option ────────────────────────────────────────
 echo "도움말이 계약의 옵션을 다 적는가"
 for opt in --voice --lang --vol --rate --tone --channel --hold --repeat --gap --async --quiet; do
   miss=""
@@ -228,10 +222,10 @@ for opt in --voice --lang --vol --rate --tone --channel --hold --repeat --gap --
 done
 echo
 
-# ── doctor 와 list ──────────────────────────────────────────────────────────
+# ── doctor and list ─────────────────────────────────────────────────────────
 echo "doctor 와 list 가 계약대로 말하는가"
-# doctor 의 종료코드는 그 기계에 무엇이 깔렸느냐로 갈리므로 보지 않는다. 첫 줄은
-# 버전과 어느 백엔드로 도는지를 밝히는 유일한 줄이라 모양이 고정돼야 한다.
+# doctor's exit code depends on what is installed, so only the header line —
+# version and backend — is checked.
 doctor_head='^nautice [0-9]+\.[0-9]+\.[0-9]+ \((macos|linux|windows)\)$'
 if (( have_bash )); then
   got=$(run_bash doctor | head -1)
@@ -243,8 +237,8 @@ if (( have_ps )); then
   if [[ $got =~ $doctor_head ]]; then ok "ps doctor 머리글"
   else bad "ps doctor 머리글" "'$got'"; fi
 fi
-# 기본값 줄은 같은 숫자를 같은 서식으로 찍어야 한다. 이름표의 폭은 한글 너비
-# 때문에 OS 마다 달라지므로 숫자 부분만 본다.
+# The defaults line must format numbers alike; label padding differs, so only
+# the numbers are compared.
 defaults_of() { sed -n 's/^.*\(vol=[0-9.]* rate=[0-9.]*\).*$/\1/p'; }
 if (( have_bash && have_ps )); then
   a=$(run_bash doctor | defaults_of)
@@ -254,8 +248,7 @@ if (( have_bash && have_ps )); then
 else
   printf '  \033[33mskip\033[0m %s (%s)\n' "doctor 기본값" "$SKIP_WHY"
 fi
-# 번들 효과음의 이름표는 세 OS 가 같아야 한다 — 알림의 뜻이 기계마다 흔들리면
-# 안 되기 때문이다. 그 뒤에 붙는 OS 기본 사운드는 기계마다 다르니 뺀다.
+# Bundled tone names must match on every OS; OS system sounds are excluded.
 bundled() { sed -n '/^번들/,/^$/p' | sed -n 's/^  //p' | sort; }
 if (( have_bash && have_ps )); then
   a=$(run_bash list sounds | bundled)
@@ -267,10 +260,9 @@ else
 fi
 echo
 
-# ── 버전 ────────────────────────────────────────────────────────────────────
-# 버전이 세 곳에 따로 박혀 있다. 하나만 올리면 --version 과 nix 패키지가 갈라져
-# 사용자가 어느 쪽을 쓰고 있는지 알 수 없게 된다. 파일에서 읽으므로 구현이
-# 하나뿐인 기계에서도 세 값을 다 본다.
+# ── Version ─────────────────────────────────────────────────────────────────
+# The version lives in three files; bumping one splits --version from the nix
+# package. Read from files, so all three are checked on any machine.
 echo "버전이 세 곳에서 한 값인가"
 v_nix=$(sed -n 's/.*version = "\([^"]*\)".*/\1/p' flake.nix | head -1)
 v_bash=$(sed -n 's/^VERSION=//p' "$BASH_IMPL")
@@ -281,7 +273,7 @@ for pair in "flake.nix:$v_nix" "bin/nautice:$v_bash" "bin/nautice.ps1:$v_ps"; do
   elif [[ $got == "$v_nix" ]]; then ok "$where $got"
   else bad "$where" "flake.nix 는 $v_nix, $where 는 $got"; fi
 done
-# --version 이 실제로 그 값을 찍는지까지 본다.
+# And --version must actually print it.
 if (( have_bash )); then
   got=$(run_bash --version)
   if [[ $got == "nautice $v_bash" ]]; then ok "bash --version"
@@ -293,10 +285,9 @@ if (( have_ps )); then
   else bad "ps --version" "기대 'nautice $v_ps', 실제 '$got'"; fi
 fi
 
-# call 의 기본 문구는 계약에 글자 그대로 적혀 있다. 코드만 고치면 문서가 다른
-# 문구를 약속한 채로 남는다 — 실제로 그렇게 갈라져 있던 자리다.
+# docs/cli.md states call's default message verbatim; code and doc must agree.
 if (( have_bash || have_ps )); then
-  # shellcheck disable=SC2016  # 찾는 게 마크다운의 백틱 자체다
+  # shellcheck disable=SC2016  # the pattern matches literal Markdown backticks
   doc_call=$(sed -n 's/^.*기본 문구는 `\([^`]*\)`.*$/\1/p' docs/cli.md | head -1)
   if (( have_bash )); then got=$(run_bash call --plan | sed -n 's/^text=//p')
   else                      got=$(run_ps   call --plan | sed -n 's/^text=//p'); fi
@@ -304,9 +295,8 @@ if (( have_bash || have_ps )); then
   else bad 'call 기본 문구' "docs/cli.md 는 '${doc_call:-(못 읽음)}', 구현은 '$got'"; fi
 fi
 
-# README 가 에이전트에게 주는 프롬프트는 옵션을 이름으로 부른다. 옵션이
-# 바뀌면 그 프롬프트는 없는 옵션을 쓰라고 시키고, 에이전트가 그대로 설정을
-# 고친 뒤에야 드러난다.
+# The README's agent prompt names options. A renamed option would have agents
+# write broken config, noticed only afterwards.
 echo "README 의 에이전트 안내가 부르는 옵션이 있는가"
 readme_opts=$(sed -n '/^## 에이전트에 물리기/,/^## 구조/p' README.md \
   | grep -oE '`--?[a-z][a-z-]*' | tr -d '`' | sort -u)
@@ -319,11 +309,11 @@ for opt in $readme_opts; do
 done
 echo
 
-# ── 계약의 효과음 이름표가 번들에 있는가 ────────────────────────────────────
-# docs/cli.md 에 이름표만 더하고 tools/gen-sounds.py 를 안 돌리면 그 이름표는
-# "그런 사운드가 없다" 로 죽는다. 반대로 파일만 늘면 아무도 그 소리를 못 찾는다.
+# ── Contract tone names exist in the bundle ─────────────────────────────────
+# A tone named in docs/cli.md but never generated fails at runtime; a file
+# nobody documents is never found.
 echo "계약의 이름표와 번들 파일이 맞는가"
-# shellcheck disable=SC2016  # 찾는 게 마크다운의 백틱 자체다
+# shellcheck disable=SC2016  # the pattern matches literal Markdown backticks
 doc_tones=$(grep -F 'share/sounds/<이름>.wav' docs/cli.md | grep -oE '`[a-z]+`' | tr -d '`' | sort)
 wav_tones=$(find share/sounds -name '*.wav' -exec basename {} .wav \; | sort)
 if [[ $doc_tones == "$wav_tones" && -n $doc_tones ]]; then
@@ -333,17 +323,16 @@ else
 fi
 echo
 
-# ── 계약이 구현의 환경변수를 다 적고 있는가 ─────────────────────────────────
-# 한쪽에만 적힌 변수는 아무도 못 찾는다. 파일만 읽으므로 구현이 하나뿐인
-# 기계에서도 돈다.
+# ── Contract documents every environment variable ───────────────────────────
+# An undocumented variable is undiscoverable. Reads files only, so it runs anywhere.
 echo "계약이 환경변수를 다 적는가"
 impl_envs=$(grep -ohE 'NAUTICE_[A-Z_]+' "$BASH_IMPL" "$PS_IMPL" | sort -u)
 doc_envs=$(grep -ohE 'NAUTICE_[A-Z_]+' docs/cli.md | sort -u)
 for v in $impl_envs; do
   if grep -qF "$v" docs/cli.md; then ok "$v"; else bad "$v" "구현이 읽는데 docs/cli.md 에 없다"; fi
 done
-# NAUTICE_VOICE_KO 처럼 언어가 이름에 들어가는 것은 구현이 문자열로 조립한다.
-# 그래서 소스에는 NAUTICE_VOICE_ 까지만 나온다 — 그 접두사로 덮인 것은 봐준다.
+# Names like NAUTICE_VOICE_KO are assembled at runtime; the source only has the
+# NAUTICE_VOICE_ prefix, so documented names under it count as covered.
 for v in $doc_envs; do
   covered=0
   for i in $impl_envs; do

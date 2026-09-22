@@ -1,6 +1,5 @@
-# 태그가 붙으면 릴리스 자산을 올린다. 자산 이름에는 버전이 없다 —
-# releases/latest/download/<이름> 이 그대로 서야 인스톨러가 API 없이 latest 를
-# 푼다 (docs/install.md).
+# Publishes release assets for a v* tag. Asset names carry no version, so
+# releases/latest/download/<name> works without an API call (docs/install.md).
 name: release
 
 on:
@@ -16,35 +15,34 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 태그와 소스가 어긋난 채로 올리면 사용자가 받는 알맹이와 릴리스 이름이
-      # 다른 채로 남는다. 되돌리려면 태그를 지워야 하므로 여기서 막는다.
-      - name: 태그와 소스 버전이 같은지 본다
+      # A mismatch would ship contents that disagree with the release name, and
+      # undoing it means deleting the tag.
+      - name: Check tag matches source version
         run: |
           tag=${GITHUB_REF_NAME#v}
           src=$(sed -n 's/^VERSION=//p' bin/nautice)
           if [ "$tag" != "$src" ]; then
-            echo "태그 $GITHUB_REF_NAME 과 소스 $src 가 다르다" >&2
+            echo "tag $GITHUB_REF_NAME does not match source version $src" >&2
             exit 1
           fi
           echo "$GITHUB_REF_NAME"
 
-      # 릴리스는 CI 를 기다리지 않고 태그만으로 돈다. 깨진 판이 나가지 않도록
-      # 여기서 한 번 더 본다. ubuntu 러너에는 pwsh 가 있어 양쪽을 다 맞댄다.
-      - name: 적합성 테스트
+      # Releases do not wait for CI, so check again. The ubuntu runner has pwsh,
+      # so both implementations are compared.
+      - name: Conformance tests
         run: ./test/conformance
 
-      - name: 자산을 만든다
+      - name: Build assets
         run: python3 tools/mkdist
 
-      # 만든 자산으로 실제 설치 경로를 돌려 본다. 풀리지 않는 아카이브를
-      # 올리는 것이 릴리스에서 가장 흔한 실패다.
-      - name: 설치가 되는지 본다
+      # Install from the built assets: a broken archive is the usual release failure.
+      - name: Install from assets
         run: |
           NAUTICE_PREFIX="$RUNNER_TEMP/p" NAUTICE_ARCHIVE=dist/nautice-unix.tar.gz \
             bash install.sh
           "$RUNNER_TEMP/p/bin/nautice" --version
 
-      - name: 릴리스를 만든다
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

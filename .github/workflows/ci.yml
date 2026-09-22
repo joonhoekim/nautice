@@ -1,5 +1,5 @@
-# 적합성 테스트는 두 구현을 맞대는 것이라 pwsh 가 있어야 절반이 아니라 전부 돈다.
-# GitHub 러너는 세 OS 다 pwsh 를 갖고 있다. 실기가 없는 OS 까지 여기서 본다.
+# Conformance compares both implementations and needs pwsh to do more than half
+# the job; GitHub runners have it on all three OSes.
 name: ci
 
 on:
@@ -9,47 +9,45 @@ on:
 
 jobs:
   conformance:
-    name: 적합성 (${{ matrix.os }})
+    name: conformance (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
-      # pwsh 가 없으면 비교를 건너뛰고 조용히 통과한다. CI 에서 그러면 안 되므로
-      # nix 로 빌려 오는 길을 막고, 아래 단계에서 없으면 그 자리에서 실패시킨다.
+      # Without pwsh the comparisons are skipped and pass silently. Do not fall
+      # back to nix here; the next step fails outright instead.
       NAUTICE_TEST_NIX_PWSH: 0
     steps:
       - uses: actions/checkout@v7
 
-      - name: pwsh 가 있는지 확인한다
+      - name: Require pwsh
         shell: bash
         run: command -v pwsh || command -v powershell
 
-      # 러너에 TTS 백엔드가 없으면 doctor 가 "없음" 을 찍는다. 그 줄까지 실제
-      # 백엔드를 보고 나오게 한다.
-      - name: espeak-ng 를 깐다
+      # So doctor reports a real TTS backend.
+      - name: Install espeak-ng
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y espeak-ng
 
-      - name: 적합성 테스트
+      - name: Conformance tests
         shell: bash
         run: ./test/conformance
 
-      # Windows 에서 bin/nautice 는 ps1 로 넘기므로 적합성 테스트가 비교할 상대가
-      # 없다. 대신 여기가 System.Speech 가 실제로 불리는 유일한 자리다 —
-      # nautice.cmd 가 부르는 것과 같은 PowerShell 5.1 로 본다.
-      - name: Windows 실기 점검
+      # On Windows there is nothing to compare against, but this is the only
+      # place System.Speech really runs — under PowerShell 5.1, as nautice.cmd uses.
+      - name: Windows smoke test
         if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
           .\bin\nautice.ps1 doctor
           .\bin\nautice.ps1 list voices
 
-  # 인스톨러도 이중 구현이라 같은 갈라짐 위험이 있다. NAUTICE_ARCHIVE 로 방금
-  # 만든 자산을 먹여서, 릴리스가 없어도 PR 마다 실제 설치 경로가 돈다.
+  # The installers are a second pair of implementations. Feeding freshly built
+  # assets through NAUTICE_ARCHIVE runs the real install path on every PR.
   install:
-    name: 설치 (${{ matrix.os }})
+    name: install (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -58,11 +56,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: 릴리스 자산을 만든다
+      - name: Build assets
         shell: bash
         run: python3 tools/mkdist
 
-      - name: 설치한다 (unix)
+      - name: Install (unix)
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
@@ -70,16 +68,16 @@ jobs:
             bash install.sh
           "$RUNNER_TEMP/p/bin/nautice" --version
 
-      - name: 지운다 (unix)
+      - name: Uninstall (unix)
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
           NAUTICE_PREFIX="$RUNNER_TEMP/p" NAUTICE_UNINSTALL=1 bash install.sh
-          test ! -e "$RUNNER_TEMP/p/bin/nautice" || { echo "안 지워졌다" >&2; exit 1; }
+          test ! -e "$RUNNER_TEMP/p/bin/nautice" || { echo "not removed" >&2; exit 1; }
 
-      # nautice.cmd 가 부르는 것과 같은 PowerShell 5.1 로 돌린다. 설치본의
-      # nautice.ps1 이 UTF-8 BOM 을 잃었으면 여기서 한글이 깨진다.
-      - name: 설치한다 (windows)
+      # PowerShell 5.1, as nautice.cmd uses: an installed nautice.ps1 that lost
+      # its UTF-8 BOM shows garbled Korean here.
+      - name: Install (windows)
         if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
@@ -89,17 +87,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & "$env:RUNNER_TEMP\p\bin\nautice.ps1" list sounds
 
-      - name: 지운다 (windows)
+      - name: Uninstall (windows)
         if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
           $env:NAUTICE_PREFIX = "$env:RUNNER_TEMP\p"
           $env:NAUTICE_UNINSTALL = '1'
           .\install.ps1
-          if (Test-Path "$env:RUNNER_TEMP\p\bin\nautice.ps1") { Write-Error '안 지워졌다'; exit 1 }
+          if (Test-Path "$env:RUNNER_TEMP\p\bin\nautice.ps1") { Write-Error 'not removed'; exit 1 }
 
   nix:
-    name: nix build (shellcheck 포함)
+    name: nix build (includes shellcheck)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

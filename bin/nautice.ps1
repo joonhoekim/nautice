@@ -18,6 +18,15 @@ $ErrorActionPreference = 'Stop'
 # 건드리지 않는다 (CP437 콘솔에서 실측).
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
+# 숫자 파싱과 서식을 문화권에서 뗀다. 소수점이 쉼표인 문화권에서는
+# [double]::TryParse("0.4") 가 조용히 4 를 내놓고(`--vol 0.4` 가 최대 음량이 된다)
+# "{0:F3}" -f 0.4 는 "0,400" 을 찍어 적합성 비교까지 깨진다 (de-DE·fr-FR 실측).
+# 부르는 곳마다 InvariantCulture 를 넘기는 방식은 한 군데만 빠뜨려도 다시 새므로
+# 스레드 문화권 자체를 바꾼다.
+# 보이스 폴백은 사용자의 실제 지역 설정을 봐야 하니 바꾸기 전에 붙잡아 둔다.
+$SystemCulture = [Globalization.CultureInfo]::CurrentCulture
+[Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
+
 $VERSION = '0.2.0'
 
 # 부를 때마다 두 번 반복하므로 짧아야 한다.
@@ -51,9 +60,10 @@ $ValueOpts = @('-v', '--voice', '-V', '--vol', '-r', '--rate',
 # [double] 캐스트를 그냥 쓰면 `-r abc` 가 .NET 의 변환 예외 스택을 사용자에게
 # 뱉는다. bash 쪽은 awk 가 범위를 재다 실패해 제 문구로 죽으므로 여기서 맞춘다.
 function ConvertTo-Num([string] $v, [string] $label) {
-    $d = 0.0
-    if (-not [double]::TryParse($v, [ref] $d)) { Die "$label 은 숫자다: $v" }
-    return $d
+    # 받아들이는 문법을 정규식으로 못박는다 — 문화권에 안 기대려는 것인데 판정을
+    # 다시 문화권 타는 파서에 맡기면 같은 자리로 돌아온다.
+    if ($v -notmatch '^[+-]?(\d+(\.\d*)?|\.\d+)$') { Die "$label 은 숫자다: $v" }
+    return [double]::Parse($v, [Globalization.CultureInfo]::InvariantCulture)
 }
 
 function Parse-Args([string[]] $argv) {
@@ -170,7 +180,7 @@ function New-Synth([hashtable] $o, [string] $text) {
         $pick = $installed | Where-Object { $_.Culture.Name -eq 'ko-KR' } | Select-Object -First 1
     }
     if (-not $pick) {
-        $pick = $installed | Where-Object { $_.Culture.Name -eq (Get-Culture).Name } | Select-Object -First 1
+        $pick = $installed | Where-Object { $_.Culture.Name -eq $SystemCulture.Name } | Select-Object -First 1
     }
     if ($pick) { $synth.SelectVoice($pick.Name) }
     return $synth

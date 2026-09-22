@@ -21,9 +21,10 @@ VERSION=0.4.0
 : "${NAUTICE_RATE:=1.0}"
 : "${NAUTICE_PIPER_MODEL:=}"
 : "${NAUTICE_CHANNEL:=sound}"
+# 어느 에이전트가 부르는지는 쓰는 사람이 정한다. 기본값은 중립이다 — 이 도구는
+# 특정 에이전트에 묶이지 않는다.
+: "${NAUTICE_CALL_MESSAGE:=에이전트가 부릅니다}"
 
-# 부를 때마다 두 번 반복하므로 짧아야 한다. 긴 문구를 쓰면 call 하나가 10초를 넘는다.
-CALL_MESSAGE='클로드가 부릅니다'
 # say 와 espeak-ng 의 보통 속도. 배속 1.0 이 이 값이다 — macOS 에서 실측하면
 # `say -r 175` 와 -r 를 안 준 자연 속도가 같은 길이로 나온다 (Yuna Premium, 2.53s).
 BASE_WPM=175
@@ -405,7 +406,8 @@ cmd_call() {
   [[ $REPEAT_GIVEN == 0 ]] && OPT_REPEAT=2
   CMD_NAME=call
   local text=$*
-  [[ -z ${text// } ]] && text=$CALL_MESSAGE
+  # 부를 때마다 두 번 반복하므로 짧아야 한다. 긴 문구를 쓰면 call 하나가 10초를 넘는다.
+  [[ -z ${text// } ]] && text=$NAUTICE_CALL_MESSAGE
   cmd_alert "$text"
 }
 

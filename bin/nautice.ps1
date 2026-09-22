@@ -29,8 +29,6 @@ $SystemCulture = [Globalization.CultureInfo]::CurrentCulture
 
 $VERSION = '0.4.0'
 
-# 부를 때마다 두 번 반복하므로 짧아야 한다.
-$CallMessage = '클로드가 부릅니다'
 # SAPI 의 Rate 는 -10..10 이고 속도는 대략 3^(Rate/10) 배다. 배속 1.0 이 Rate 0.
 $RateBase = 3
 
@@ -48,6 +46,10 @@ $Defaults = @{
     Rate    = [double](Get-Env 'NAUTICE_RATE' '1.0')
     Channel = Get-Env 'NAUTICE_CHANNEL' 'sound'
 }
+
+# 어느 에이전트가 부르는지는 쓰는 사람이 정한다. 기본값은 중립이다 — 이 도구는
+# 특정 에이전트에 묶이지 않는다. 부를 때마다 두 번 반복하므로 짧아야 한다.
+$CallMessage = Get-Env 'NAUTICE_CALL_MESSAGE' '에이전트가 부릅니다'
 
 function Die($msg) { [Console]::Error.WriteLine("nautice: $msg"); exit 1 }
 

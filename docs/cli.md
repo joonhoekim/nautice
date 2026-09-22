@@ -17,7 +17,9 @@
 | `nautice doctor` | 환경 점검. 정상이면 0 |
 | `nautice cache [info\|clear]` | 렌더 캐시 |
 
-`call` 의 기본 문구는 `클로드가 부릅니다. 확인해주세요.` 다.
+`call` 의 기본 문구는 `에이전트가 부릅니다` 다. 이 도구는 특정 에이전트에
+묶이지 않는다 — 부르는 쪽 이름을 넣고 싶으면 `NAUTICE_CALL_MESSAGE` 로 바꾼다.
+부를 때마다 두 번 반복하므로 짧아야 한다.
 
 ## 옵션
 
@@ -177,6 +179,7 @@ Windows SAPI 의 `Rate` 는 −10 – 10 이고 속도는 대략 `3^(Rate/10)` �
 | `NAUTICE_VOICE` `NAUTICE_VOICE_KO` `NAUTICE_VOICE_EN` | 기본 보이스 |
 | `NAUTICE_VOL` `NAUTICE_RATE` | 기본 볼륨·배속 |
 | `NAUTICE_CHANNEL` | 기본 채널 (`sound` / `visual` / `both`) |
+| `NAUTICE_CALL_MESSAGE` | `call` 의 기본 문구 |
 | `NAUTICE_SOUNDS` | 번들 효과음 디렉터리. 비면 실행 파일 옆의 `../share/sounds` 를 찾는다 |
 | `NAUTICE_CACHE` | 렌더 캐시 위치 (bash 쪽만 쓴다) |
 | `NAUTICE_PIPER_MODEL` | Linux 에서 쓸 piper `.onnx` 경로 |

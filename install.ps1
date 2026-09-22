@@ -146,7 +146,7 @@ try {
     & $ps1 doctor
     $global:LASTEXITCODE = 0
     Write-Output ''
-    Say '에이전트에 물리는 법은 README 와 docs/claude-code-config.md 에 있다'
+    Say '에이전트에 물리는 법은 README 와 docs/agent-setup.md 에 있다'
 } finally {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmp
 }

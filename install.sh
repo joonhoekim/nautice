@@ -107,4 +107,4 @@ esac
 echo
 "$PREFIX/bin/nautice" doctor || true
 echo
-say "에이전트에 물리는 법은 README 와 docs/claude-code-config.md 에 있다"
+say "에이전트에 물리는 법은 README 와 docs/agent-setup.md 에 있다"

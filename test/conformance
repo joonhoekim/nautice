@@ -276,6 +276,17 @@ if (( have_ps )); then
   else bad "ps --version" "기대 'nautice $v_ps', 실제 '$got'"; fi
 fi
 
+# call 의 기본 문구는 계약에 글자 그대로 적혀 있다. 코드만 고치면 문서가 다른
+# 문구를 약속한 채로 남는다 — 실제로 그렇게 갈라져 있던 자리다.
+if (( have_bash || have_ps )); then
+  # shellcheck disable=SC2016  # 찾는 게 마크다운의 백틱 자체다
+  doc_call=$(sed -n 's/^.*기본 문구는 `\([^`]*\)`.*$/\1/p' docs/cli.md | head -1)
+  if (( have_bash )); then got=$(run_bash call --plan | sed -n 's/^text=//p')
+  else                      got=$(run_ps   call --plan | sed -n 's/^text=//p'); fi
+  if [[ -n $doc_call && $doc_call == "$got" ]]; then ok "call 기본 문구 ($got)"
+  else bad 'call 기본 문구' "docs/cli.md 는 '${doc_call:-(못 읽음)}', 구현은 '$got'"; fi
+fi
+
 # README 가 에이전트에게 주는 프롬프트는 옵션을 이름으로 부른다. 옵션이
 # 바뀌면 그 프롬프트는 없는 옵션을 쓰라고 시키고, 에이전트가 그대로 설정을
 # 고친 뒤에야 드러난다.

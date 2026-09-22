@@ -5,7 +5,7 @@
 에이전트가 사람의 주의를 끄는 알림 CLI. **Windows · Linux · macOS.**
 
 ```
-nautice call                          # 차임 + "클로드가 부릅니다", 2회
+nautice call                          # 차임 + "에이전트가 부릅니다", 2회
 nautice say "빌드가 끝났습니다"
 nautice play ok
 nautice alert -t warn -n 3 "디스크가 찼습니다"
@@ -123,11 +123,13 @@ nix profile remove nautice                         # 지우기
 
 ## 에이전트에 물리기
 
-**인스톨러는 당신의 설정을 건드리지 않는다.** 사람마다 원하는 방식이 다르고,
-인스톨러가 써 넣은 설정은 낡아도 아무도 고치지 않는다.
+`nautice` 는 **특정 에이전트에 묶이지 않는다.** 하는 일은 소리와 배너를 내는
+것뿐이고, 언제 부를지는 에이전트 쪽 설정이 정한다. 설정 파일의 이름도 훅
+이벤트의 이름도 에이전트마다 다르다.
 
-대신 **에이전트에게 시킨다.** 아래를 그대로 붙여 넣으면, 에이전트가 `nautice` 가
-무엇인지 스스로 확인하고 어떤 방식으로 어디에 넣을지 당신에게 물어본 뒤 설정한다.
+**인스톨러는 그 설정을 건드리지 않는다.** 대신 **에이전트에게 시킨다.** 아래를
+그대로 붙여 넣으면, 에이전트가 `nautice` 가 무엇인지 스스로 확인하고 **자기
+규약대로** 어디에 넣을지 당신에게 물어본 뒤 설정한다.
 
 ````markdown
 nautice 라는 알림 CLI 를 이 환경에 물려줘.
@@ -135,7 +137,8 @@ nautice 라는 알림 CLI 를 이 환경에 물려줘.
 ## 이게 뭔가
 
 에이전트가 사람의 주의를 끄는 알림 도구다. 효과음 · TTS · OS 알림 배너를 한
-옵션으로 낸다. Windows · macOS · Linux 에서 같게 동작한다.
+옵션으로 낸다. Windows · macOS · Linux 에서 같게 동작한다. 특정 에이전트에
+묶이지 않는다 — 너를 포함해 셸에서 명령을 부를 수 있으면 다 쓴다.
 
 ## 먼저 확인할 것
 
@@ -145,25 +148,25 @@ nautice 라는 알림 CLI 를 이 환경에 물려줘.
 `nautice` 가 없으면 설정하지 말고 나에게 알려줘 —
 https://github.com/joonhoekim/nautice 의 설치 한 줄을 내가 먼저 돌려야 한다.
 
-## 어떻게 물릴지는 두 가지이고 성격이 다르다 — 나에게 물어봐라
+## 어떻게 물릴지 — 성격이 다른 두 가지다. 나에게 물어봐라
 
-**(1) 훅 — 무조건 울린다.** `settings.json` 의 `hooks` 에 넣는다.
+**(1) 훅 · 이벤트 — 무조건 울린다.** 사람을 기다릴 때와 한 턴을 마쳤을 때가
+쓸 만한 자리다. 빠뜨리지 않는 대신 성가실 수 있다.
 
-- `Notification`: 권한 요청 · 입력 대기처럼 사람을 기다릴 때
-- `Stop`: 한 턴을 마쳤을 때
+**(2) 네가 판단해서 부른다.** 훅을 걸지 않고 지침 파일에 도구의 존재만 적는다.
+**"자동으로 울리지 않는다" 를 명시**해야 아무 때나 소리를 내지 않는다.
+
+## 어디에 넣을지 — 네 규약을 따라라
+
+네가 도는 에이전트의 설정 위치와 훅 이벤트 이름은 네가 안다. 훅 같은 기능이
+있으면 그 설정 파일에, 없으면 지침 파일(`AGENTS.md` 등)에 적어라.
+**전역인지 이 프로젝트만인지도 나에게 물어봐라.**
+
+## 훅에 넣을 때 반드시 지킬 것
+
 - **`-a` 가 없으면 소리가 끝날 때까지 에이전트가 멈춘다.** 훅에서는 필수다.
-  `-q` 는 상태 줄을 안 찍는다 — 훅에서는 같이 쓴다.
+- `-q` 는 상태 줄을 안 찍는다 — 훅에서는 같이 쓴다.
 - Windows 에서는 `nautice` 대신 `nautice.cmd` 로 적는다.
-
-**(2) 네가 판단해서 부른다.** 훅을 걸지 않고 `CLAUDE.md` 에 도구의 존재만
-적는다. "자동으로 울리지 않는다" 를 명시해야 아무 때나 소리를 내지 않는다.
-
-## 어디에 넣을지도 물어봐라
-
-| | 훅 | 도구 안내 |
-|---|---|---|
-| 전역 | `~/.claude/settings.json` | `~/.claude/CLAUDE.md` |
-| 이 프로젝트만 | `.claude/settings.json` | `./CLAUDE.md` |
 
 ## 고를 때 참고할 것
 
@@ -171,6 +174,7 @@ https://github.com/joonhoekim/nautice 의 설치 한 줄을 내가 먼저 돌려
   사람이 지울 때까지 배너가 남는다.
 - 소리가 성가시면 `-c visual` 로 배너만 낼 수 있다.
 - 부를 문구는 `nautice say "..."` 로 바꾼다. 한글이면 한국어 보이스로 나간다.
+- 부르는 쪽 이름을 넣고 싶으면 `NAUTICE_CALL_MESSAGE` 로 기본 문구를 바꾼다.
 
 ## 마무리
 
@@ -181,8 +185,9 @@ https://github.com/joonhoekim/nautice 의 설치 한 줄을 내가 먼저 돌려
 <details>
 <summary>직접 고치기</summary>
 
-**(1) 훅.** `~/.claude/settings.json`. 에이전트를 막지 않도록 **반드시 `-a`** 를
-붙인다.
+훅 설정은 에이전트마다 모양이 다르다. 아래는 Claude Code 예시다 — 다른
+에이전트면 이름만 그쪽 규약으로 바꾼다. 자세한 것은
+[`docs/agent-setup.md`](docs/agent-setup.md).
 
 ```json
 {
@@ -197,10 +202,12 @@ https://github.com/joonhoekim/nautice 의 설치 한 줄을 내가 먼저 돌려
 }
 ```
 
-Windows 에서는 `command` 를 `nautice.cmd call -a -q` 로 적는다. 자리를 비울 때가
-많으면 `-c both --hold` 를 붙인다 — 배너가 지울 때까지 남는다.
+에이전트를 막지 않도록 **반드시 `-a`** 를 붙인다. Windows 에서는 `command` 를
+`nautice.cmd call -a -q` 로 적는다. 자리를 비울 때가 많으면 `-c both --hold` 를
+붙인다 — 배너가 지울 때까지 남는다.
 
-**(2) 에이전트가 판단해서 부른다.** 훅을 걸지 말고 `CLAUDE.md` 에 적는다.
+훅 대신 에이전트가 판단해서 부르게 하려면 지침 파일(`AGENTS.md` · `CLAUDE.md`
+등)에 적는다.
 
 ```markdown
 ## 사용 가능한 도구
@@ -210,8 +217,7 @@ Windows 에서는 `command` 를 `nautice.cmd call -a -q` 로 적는다. 자리�
   필요할 때만 쓴다. 배너까지 띄우려면 `-c both`, 지울 때까지 남기려면 `--hold`.
 ```
 
-"자동으로 울리지 않는다" 를 적어야 아무 때나 소리를 내지 않는다. 더 자세한
-것은 [`docs/claude-code-config.md`](docs/claude-code-config.md).
+"자동으로 울리지 않는다" 를 적어야 아무 때나 소리를 내지 않는다.
 
 </details>
 
@@ -228,6 +234,7 @@ install.ps1               Windows 인스톨러
 tools/mkdist              릴리스 자산을 만든다 (표준 라이브러리만)
 docs/cli.md               동작 계약 — 단일 출처
 docs/install.md           설치 계약 — 단일 출처
+docs/agent-setup.md       에이전트에 물리는 법
 test/conformance          두 구현이 계약을 똑같이 지키는지 본다
 ```
 
@@ -264,6 +271,7 @@ nix build .#nautice    # shellcheck 까지 돈다
 ## 환경변수
 
 `NAUTICE_VOICE` `NAUTICE_VOICE_KO` `NAUTICE_VOICE_EN` `NAUTICE_VOL` `NAUTICE_RATE`
-`NAUTICE_CHANNEL` `NAUTICE_CACHE` `NAUTICE_SOUNDS` `NAUTICE_PIPER_MODEL`
+`NAUTICE_CHANNEL` `NAUTICE_CALL_MESSAGE` `NAUTICE_CACHE` `NAUTICE_SOUNDS`
+`NAUTICE_PIPER_MODEL`
 
 자세한 것은 [`docs/cli.md`](docs/cli.md).

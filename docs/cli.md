@@ -122,6 +122,10 @@ Windows SAPI 의 `Rate` 는 −10 – 10 이고 속도는 대략 `3^(Rate/10)` �
   받으므로 Windows 는 캐시가 없고 `nautice cache` 가 그렇다고 알린다.
 - **`--plan` 의 `voice`** — bash 는 해석된 이름(`Yuna (Premium)`)을 찍고 Windows 는
   비운다. 해석에 `System.Speech` 가 필요해서다. 비교 대상은 `voice_req` 와 `lang` 이다.
+- **macOS 배너의 주인은 스크립트 편집기다** — `osascript` 가 띄우므로 알림
+  센터에 `Script Editor` 로 묶이고, 시스템 설정 → 알림에서도 그 앱 아래에 있다.
+  배너의 제목은 `nautice` 로 나오지만 알림을 끄거나 허용하려면 스크립트 편집기를
+  찾아야 한다 (macOS 26 에서 실측).
 - **배너가 실제로 떴는지는 알 수 없다** — macOS 의 `osascript` 는 알림 권한이
   없거나 집중 모드에 눌려도 0 을 낸다. `notify-send` 도 데몬이 메시지를 버리면
   그렇다. 종료코드 0 은 "백엔드를 불렀다" 까지만 뜻한다. 소리 쪽의 `say -v

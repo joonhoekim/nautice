@@ -36,6 +36,7 @@ The `install` job in `ci.yml` runs them end to end on all three OSes.
 nix build .#nautice           # includes shellcheck
 
 python3 tools/mkdist          # builds release assets in dist/
+tools/release-notes HEAD      # previews the next release's notes
 NAUTICE_PREFIX=/tmp/p NAUTICE_ARCHIVE=dist/nautice-unix.tar.gz bash install.sh
 ```
 

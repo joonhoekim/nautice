@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Print release notes for a ref: commits since the previous tag, grouped by the
+# commit convention in AGENTS.md. Used by release.yml; run it locally to preview.
+#
+#   tools/release-notes v0.5.0     # or any ref, e.g. HEAD
+set -euo pipefail
+
+REPO=joonhoekim/nautice
+ref=${1:?usage: tools/release-notes <ref>}
+git rev-parse -q --verify "$ref^{commit}" >/dev/null || { echo "release-notes: unknown ref: $ref" >&2; exit 1; }
+
+# The previous tag reachable from ref's parent; the first release covers everything.
+if prev=$(git describe --tags --abbrev=0 "$ref^" 2>/dev/null); then range="$prev..$ref"
+else prev=''; range=$ref
+fi
+
+breaking='' features='' fixes=''
+while IFS=$'\t' read -r hash subject; do
+  # type(scope)!: text — only feat and fix make the notes, plus anything marked "!".
+  [[ $subject =~ ^([a-z]+)(\(([^\)]*)\))?(!)?:\ (.*)$ ]] || continue
+  type=${BASH_REMATCH[1]} scope=${BASH_REMATCH[3]} bang=${BASH_REMATCH[4]} text=${BASH_REMATCH[5]}
+  line="- ${scope:+**$scope:** }$text ($hash)"$'\n'
+  if [[ -n $bang ]]; then breaking+=$line
+  elif [[ $type == feat ]]; then features+=$line
+  elif [[ $type == fix ]]; then fixes+=$line
+  fi
+done < <(git log --reverse --format='%h%x09%s' "$range")
+
+cat <<HEAD
+Install, or update an existing install:
+
+\`\`\`sh
+curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | bash
+\`\`\`
+
+\`\`\`powershell
+irm https://github.com/$REPO/releases/latest/download/install.ps1 | iex
+\`\`\`
+HEAD
+[[ -n $breaking ]] && printf '\n## Breaking changes\n\n%s' "$breaking"
+[[ -n $features ]] && printf '\n## Features\n\n%s' "$features"
+[[ -n $fixes ]] && printf '\n## Fixes\n\n%s' "$fixes"
+if [[ -n $prev ]]; then
+  printf '\nFull changelog: https://github.com/%s/compare/%s...%s\n' "$REPO" "$prev" "$ref"
+fi

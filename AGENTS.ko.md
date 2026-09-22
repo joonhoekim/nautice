@@ -39,6 +39,7 @@ OS 백엔드의 한계 때문에 정말 갈라져야 하는 것은 `docs/cli.md`
 nix build .#nautice           # shellcheck 까지 돈다
 
 python3 tools/mkdist          # 릴리스 자산을 dist/ 에 만든다
+tools/release-notes HEAD      # 다음 릴리스 노트를 미리 본다
 NAUTICE_PREFIX=/tmp/p NAUTICE_ARCHIVE=dist/nautice-unix.tar.gz bash install.sh
 ```
 

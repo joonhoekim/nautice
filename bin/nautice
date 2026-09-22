@@ -459,7 +459,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   -V, --vol N        0.0 ~ 1.0            (기본 0.6)
   -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
   -t, --tone NAME    alert/call 의 효과음  (기본 ask)
-  -n, --repeat N     1 ~ 20               (기본 1, call 은 2)
+  -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
   -g, --gap SEC      반복 사이 간격        (기본 0.4)
   -a, --async        기다리지 않고 반환 (훅에서 필수)
   -q, --quiet        상태 줄을 찍지 않는다
@@ -485,12 +485,24 @@ ARGS=()
 # 받아들이는 문법을 못박는다. awk 의 비교에만 맡기면 "0,4" 가 0 으로, "0.4abc" 가
 # 0.4 로 조용히 통과한다 — 볼륨이 말없이 0 이 되는 식이다. ps1 과 같은 문법이다.
 is_num() { [[ $1 =~ ^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; }
+is_int() { [[ $1 =~ ^[+-]?[0-9]+$ ]]; }
+
+# 범위는 awk 로 잰다. (( )) 는 소수를 못 받고 "08" 을 8진수로 읽는다.
+in_range() { awk -v v="$1" -v lo="$2" -v hi="$3" 'BEGIN { exit !(v >= lo && v <= hi) }'; }
 
 check_num() {
   local label=$1 v=$2 lo=$3 hi=$4
   is_num "$v" || die "$label 은 숫자다: $v"
-  awk -v v="$v" -v lo="$lo" -v hi="$hi" 'BEGIN { exit !(v >= lo && v <= hi) }' \
-    || die "$label 은 $lo ~ $hi 이다: $v"
+  in_range "$v" "$lo" "$hi" || die "$label 은 $lo ~ $hi 이다: $v"
+}
+
+# 반복 횟수는 정수여야 한다. 소수가 들어오면 for (( )) 가 "arithmetic syntax
+# error" 로 죽고 PowerShell 은 [int] 로 반올림해 그만큼 재생한다 — 같은 명령이
+# OS 마다 다르게 깨지므로 문법에서 잘라낸다.
+check_int() {
+  local label=$1 v=$2 lo=$3 hi=$4
+  is_int "$v" || die "$label 은 정수다: $v"
+  in_range "$v" "$lo" "$hi" || die "$label 은 $lo ~ $hi 이다: $v"
 }
 
 # set -u 라 값이 빠진 옵션은 $2 에서 "unbound variable" 로 죽는다. 종료코드는 1 로
@@ -519,7 +531,7 @@ set -- "${ARGS[@]:-}"
 
 [[ -n $OPT_VOL  ]] && check_num --vol  "$OPT_VOL"  0 10
 [[ -n $OPT_RATE ]] && check_num --rate "$OPT_RATE" 0.1 10
-check_num --repeat "$OPT_REPEAT" 1 20
+check_int --repeat "$OPT_REPEAT" 1 20
 check_num --gap    "$OPT_GAP"    0 10
 
 # 훅에서 쓰려면 에이전트를 막지 않아야 한다. 인자를 다 검사한 뒤에 떼어내므로

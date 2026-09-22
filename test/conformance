@@ -147,6 +147,8 @@ reject_case '값 빠진 -t'    say -t
 reject_case '--vol 문자'    say -V xyz x
 reject_case '--rate 문자'   say -r abc x
 reject_case '--repeat 문자' say -n q x
+# 소수는 bash 가 산술 오류로, ps 가 반올림 재생으로 갈라지던 자리다.
+reject_case '--repeat 소수' say -n 2.7 x
 # 소수점이 쉼표인 문화권에서 조용히 0 으로 통과하던 자리다.
 reject_case '--vol 쉼표'    say -V 0,4 x
 reject_case '--vol 꼬리'    say -V 0.4abc x

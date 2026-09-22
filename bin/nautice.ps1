@@ -66,6 +66,14 @@ function ConvertTo-Num([string] $v, [string] $label) {
     return [double]::Parse($v, [Globalization.CultureInfo]::InvariantCulture)
 }
 
+# 반복 횟수는 정수여야 한다. [int] 캐스트는 2.7 을 조용히 3 으로 올려 세 번 내고
+# bash 쪽은 for (( )) 가 산술 오류로 죽는다 — 같은 명령이 OS 마다 다르게 깨지므로
+# 문법에서 잘라낸다.
+function ConvertTo-Int([string] $v, [string] $label) {
+    if ($v -notmatch '^[+-]?\d+$') { Die "$label 은 정수다: $v" }
+    return [int]::Parse($v, [Globalization.CultureInfo]::InvariantCulture)
+}
+
 function Parse-Args([string[]] $argv) {
     $o = @{
         Voice = ''; Vol = $null; Rate = $null; Tone = ''
@@ -86,7 +94,7 @@ function Parse-Args([string[]] $argv) {
             { $_ -ceq '-V' -or $_ -ceq '--vol'    } { $o.Vol   = ConvertTo-Num $argv[$i + 1] '--vol' }
             { $_ -ceq '-r' -or $_ -ceq '--rate'   } { $o.Rate  = ConvertTo-Num $argv[$i + 1] '--rate' }
             { $_ -ceq '-t' -or $_ -ceq '--tone'   } { $o.Tone  = $argv[$i + 1] }
-            { $_ -ceq '-n' -or $_ -ceq '--repeat' } { $o.Repeat = [int](ConvertTo-Num $argv[$i + 1] '--repeat'); $o.RepeatGiven = $true }
+            { $_ -ceq '-n' -or $_ -ceq '--repeat' } { $o.Repeat = ConvertTo-Int $argv[$i + 1] '--repeat'; $o.RepeatGiven = $true }
             { $_ -ceq '-g' -or $_ -ceq '--gap'    } { $o.Gap   = ConvertTo-Num $argv[$i + 1] '--gap' }
             { $_ -ceq '-a' -or $_ -ceq '--async'  } { $o.Async = $true;  $needsValue = $false }
             { $_ -ceq '-q' -or $_ -ceq '--quiet'  } { $o.Quiet = $true;  $needsValue = $false }
@@ -370,7 +378,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   -V, --vol N        0.0 ~ 1.0            (기본 0.6, 효과음에는 안 걸린다)
   -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
   -t, --tone NAME    alert/call 의 효과음  (기본 ask)
-  -n, --repeat N     1 ~ 20               (기본 1, call 은 2)
+  -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
   -g, --gap SEC      반복 사이 간격        (기본 0.4)
   -a, --async        기다리지 않고 반환 (훅에서 필수)
   -q, --quiet        상태 줄을 찍지 않는다

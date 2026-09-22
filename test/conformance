@@ -107,12 +107,14 @@ echo
 
 # ── 환산식 ──────────────────────────────────────────────────────────────────
 echo "단위 환산 (docs/cli.md 의 식대로인가)"
+# case 를 $( ) 안에 두지 않는다. macOS 의 /bin/bash 는 3.2 라 그 안의 ;; 를
+# "syntax error near unexpected token" 으로 뱉는다 — 4.x 에서만 도는 문법이다.
 check_rate() {
-  local impl=$1 mult=$2 want=$3 got
-  got=$(case $impl in
-          bash) run_bash say --plan -r "$mult" x ;;
-          ps)   run_ps   say --plan -r "$mult" x ;;
-        esac | sed -n 's/^backend_rate=//p')
+  local impl=$1 mult=$2 want=$3 got out
+  if [[ $impl == bash ]]; then out=$(run_bash say --plan -r "$mult" x)
+  else                        out=$(run_ps   say --plan -r "$mult" x)
+  fi
+  got=$(printf '%s\n' "$out" | sed -n 's/^backend_rate=//p')
   if [[ $got == "$want" ]]; then ok "$impl rate $mult -> $want"
   else bad "$impl rate $mult" "기대 $want, 실제 $got"; fi
 }

@@ -24,8 +24,9 @@ OS 백엔드의 한계 때문에 정말 갈라져야 하는 것은 `docs/cli.md`
 ## 검증
 
 ```sh
-./test/conformance     # 두 구현 비교. pwsh 가 없으면 bash 쪽만 본다
-nix build .#nautice    # shellcheck 까지 돈다
+./test/conformance            # 두 구현 비교. pwsh 가 없으면 bash 쪽만 본다
+/bin/bash ./test/conformance  # macOS 의 bash 3.2 로 한 번 더
+nix build .#nautice           # shellcheck 까지 돈다
 ```
 
 `.github/workflows/ci.yml` 이 이 둘을 세 OS 러너에서 돌린다. Windows 실기에서
@@ -64,6 +65,10 @@ docker run --rm -v "$PWD:/w:ro" -w /w debian:stable-slim bash -c \
   `InvariantCulture`) 받아들일 문법은 정규식으로 못박아 뒀다. 되돌리지 않는다.
 - **PowerShell 의 `1..0` 은 빈 범위가 아니라 `@(1, 0)` 이다.** 배열을 잘라낼 때
   개수가 1 이면 범위를 벗어난다.
+- **macOS 의 `/bin/bash` 는 3.2 다.** `case` 를 `$( )` 안에 두면 거기서만
+  "syntax error near unexpected token `;;`" 로 죽는다. 연상 배열(`declare -A`)도
+  없다. 개발 기계의 bash 가 nix·homebrew 의 5.x 면 로컬에서는 멀쩡히 돌아서
+  안 보인다 — `/bin/bash` 로 한 번 더 돌린다.
 - **`$(cmd || true)` 로 `die` 를 못 막는다.** `exit` 가 서브셸을 그 자리에서
   끝내서 `||` 에 도달하지 못한다. 치환 바깥에서 받는다.
 

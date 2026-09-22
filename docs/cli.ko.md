@@ -21,7 +21,7 @@
 | `nautice doctor` | 환경 점검. 보이스가 있는 언어도 밝힌다. 정상이면 0 |
 | `nautice cache [info\|clear]` | 렌더 캐시 |
 
-`call` 의 기본 문구는 `에이전트가 부릅니다` 다. 이 도구는 특정 에이전트에
+`call` 의 기본 문구는 `Your agent is calling` 이다. 이 도구는 특정 에이전트에
 묶이지 않는다 — 부르는 쪽 이름을 넣고 싶으면 `NAUTICE_CALL_MESSAGE` 로 바꾼다.
 부를 때마다 두 번 반복하므로 짧아야 한다.
 

@@ -16,13 +16,13 @@ ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; pass=$((pass + 1)); }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; shift; printf '       %s\n' "$@"; fail=$((fail + 1)); }
 
 have_bash=0; [[ -x $BASH_IMPL ]] && have_bash=1
-SKIP_WHY='구현 하나만 있다'
+SKIP_WHY='only one implementation available'
 # On Git Bash / MSYS, bin/nautice hands over to nautice.ps1: comparing would
 # pit ps1 against itself, and the bash rate checks would fail on SAPI values.
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     have_bash=0
-    SKIP_WHY='윈도다 — bin/nautice 가 ps1 로 넘기므로 비교할 상대가 없다' ;;
+    SKIP_WHY='Windows: bin/nautice hands over to ps1, nothing to compare' ;;
 esac
 have_ps=0
 PWSH=""
@@ -43,11 +43,11 @@ run_ps() {
   esac
 }
 
-echo "적합성 — bash=$have_bash ps=$have_ps${PWSH:+ ($PWSH)}"
+echo "conformance — bash=$have_bash ps=$have_ps${PWSH:+ ($PWSH)}"
 echo
 
 # ── Plan comparison ─────────────────────────────────────────────────────────
-echo "계획 (OS 무관 필드가 같은가)"
+echo "Plans (OS-independent fields match)"
 # --plan goes before the case's arguments: after a `--` it would be text, the
 # command would really speak, and two empty plans would compare equal.
 plan_case() {
@@ -59,53 +59,53 @@ plan_case() {
   a=$(run_bash --plan "$@" | grep -E "$SHARED_FIELDS" | sort)
   b=$(run_ps   --plan "$@" | grep -E "$SHARED_FIELDS" | sort)
   if [[ -z $a || -z $b ]]; then
-    bad "$name" "계획이 안 나왔다 (bash ${#a}자, ps ${#b}자)"
+    bad "$name" "no plan printed (bash ${#a} chars, ps ${#b} chars)"
   elif [[ $a == "$b" ]]; then ok "$name"
   else bad "$name" "$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | head -8)"; fi
 }
 
-plan_case 'say 기본'            say "테스트 문구"
-plan_case 'say 볼륨/배속'       say -V 0.4 -r 1.5 "테스트 문구"
-plan_case 'say 보이스 지정'     say -v Heami "테스트 문구"
-plan_case 'play 이름표'         play ok
-plan_case 'play 반복'           play -n 3 -g 0.25 notify
-plan_case 'alert 톤 지정'       alert -t warn "디스크가 찼습니다"
-plan_case 'call 기본 2회'       call
-plan_case 'call 문구 지정'      call "확인 바랍니다"
-plan_case 'call 반복 덮어쓰기'  call -n 1 "한 번만"
-plan_case '-- 뒤는 전부 문구'   say -- "-v 처럼 보이는 문구"
+plan_case 'say default'         say "test text"
+plan_case 'say vol/rate'        say -V 0.4 -r 1.5 "test text"
+plan_case 'say with voice'      say -v Heami "test text"
+plan_case 'play by name'        play ok
+plan_case 'play repeated'       play -n 3 -g 0.25 notify
+plan_case 'alert with tone'     alert -t warn "Disk is full"
+plan_case 'call twice by default' call
+plan_case 'call with text'      call "Please check"
+plan_case 'call repeat override' call -n 1 "Just once"
+plan_case 'all text after --'   say -- "-v looks like an option"
 # Language detection: a divergent lang means a different voice per OS.
-plan_case '한글이면 ko'         say "빌드가 끝났습니다"
-plan_case '영어면 en'           say "build finished"
+plan_case 'Hangul is ko'        say "빌드가 끝났습니다"
+plan_case 'English is en'       say "build finished"
 # Accented Latin starts with C3; after a byte ending in e (n = 6E) a joined hex
 # string shows a false "ec" (Hangul).
-plan_case '악센트 라틴은 en'    say "Renée finished the nüance"
-plan_case '섞이면 ko'           say "build 가 끝났습니다"
+plan_case 'accented Latin is en' say "Renée finished the nüance"
+plan_case 'mixed is ko'         say "build 가 끝났습니다"
 # One case per script in docs/cli.md: bash reads UTF-8 bytes, Windows UTF-16
 # ranges, so boundaries are where they can diverge.
-plan_case 'lang 일본어'         say "ビルドが終わりました"
-plan_case 'lang 중국어'         say "构建完成"
-plan_case 'lang 러시아어'       say "Сборка завершена"
-plan_case 'lang 그리스어'       say "Η κατασκευή ολοκληρώθηκε"
-plan_case 'lang 아랍어'         say "اكتمل البناء"
-plan_case 'lang 히브리어'       say "הבנייה הושלמה"
-plan_case 'lang 태국어'         say "การสร้างเสร็จสิ้น"
-plan_case 'lang 힌디어'         say "बिल्ड पूरा हुआ"
+plan_case 'lang Japanese'         say "ビルドが終わりました"
+plan_case 'lang Chinese'         say "构建完成"
+plan_case 'lang Russian'       say "Сборка завершена"
+plan_case 'lang Greek'       say "Η κατασκευή ολοκληρώθηκε"
+plan_case 'lang Arabic'         say "اكتمل البناء"
+plan_case 'lang Hebrew'       say "הבנייה הושלמה"
+plan_case 'lang Thai'         say "การสร้างเสร็จสิ้น"
+plan_case 'lang Hindi'         say "बिल्ड पूरा हुआ"
 # Kana plus Han is Japanese: table order decides.
-plan_case 'lang 가나+한자는 ja' say "ビルド完了"
-plan_case 'lang 한글+한자는 ko' say "빌드 完了"
-plan_case '--lang 이 이긴다'    say -l de "빌드가 끝났습니다"
-plan_case '--lang 짧은 옵션'    say --lang ja "build finished"
+plan_case 'kana+Han is ja' say "ビルド完了"
+plan_case 'Hangul+Han is ko' say "빌드 完了"
+plan_case '--lang wins'         say -l de "빌드가 끝났습니다"
+plan_case '--lang long form'    say --lang ja "build finished"
 # Channel: sound vs. banner must not depend on the OS.
-plan_case 'channel 기본 sound'  say "테스트 문구"
-plan_case 'channel visual'      say -c visual "테스트 문구"
-plan_case 'channel both'        alert -c both -t warn "디스크가 찼습니다"
+plan_case 'channel default'     say "test text"
+plan_case 'channel visual'      say -c visual "test text"
+plan_case 'channel both'        alert -c both -t warn "Disk is full"
 plan_case 'channel call both'   call --channel both
-plan_case 'hold 기본 꺼짐'      say -c visual "테스트 문구"
-plan_case 'hold 켜짐'           say -c visual --hold "테스트 문구"
-plan_case 'hold + both'         alert -c both --hold -t warn "디스크가 찼습니다"
+plan_case 'hold off by default' say -c visual "test text"
+plan_case 'hold on'             say -c visual --hold "test text"
+plan_case 'hold + both'         alert -c both --hold -t warn "Disk is full"
 # With no banner there is nothing to hold: --hold is ignored, not rejected.
-plan_case 'hold 는 sound 에서 무해' say --hold "테스트 문구"
+plan_case 'hold harmless with sound' say --hold "test text"
 
 # Text from a pipe. Windows must read stdin as UTF-8 itself; decoding with the
 # console code page garbles Korean.
@@ -118,17 +118,17 @@ stdin_case() {
   a=$(printf '%s' "$text" | run_bash --plan "$@" | grep -E "$SHARED_FIELDS" | sort)
   b=$(printf '%s' "$text" | run_ps   --plan "$@" | grep -E "$SHARED_FIELDS" | sort)
   if [[ -z $a || -z $b ]]; then
-    bad "$name" "계획이 안 나왔다 (bash ${#a}자, ps ${#b}자)"
+    bad "$name" "no plan printed (bash ${#a} chars, ps ${#b} chars)"
   elif [[ $a == "$b" ]]; then ok "$name"
   else bad "$name" "$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | head -8)"; fi
 }
-stdin_case 'stdin 한글'         '빌드가 끝났습니다' say
-stdin_case 'stdin 영어'         'build finished'    say
-stdin_case 'stdin alert'        '디스크가 찼습니다' alert -t warn
+stdin_case 'stdin Korean'       '빌드가 끝났습니다' say
+stdin_case 'stdin English'      'build finished'    say
+stdin_case 'stdin alert'        'Disk is full'      alert -t warn
 echo
 
 # ── Unit conversion ─────────────────────────────────────────────────────────
-echo "단위 환산 (docs/cli.md 의 식대로인가)"
+echo "Unit conversion (as in docs/cli.md)"
 # No case inside $( ): bash 3.2 (macOS /bin/bash) fails on its ;; there.
 check_rate() {
   local impl=$1 mult=$2 want=$3 got out
@@ -137,7 +137,7 @@ check_rate() {
   fi
   got=$(printf '%s\n' "$out" | sed -n 's/^backend_rate=//p')
   if [[ $got == "$want" ]]; then ok "$impl rate $mult -> $want"
-  else bad "$impl rate $mult" "기대 $want, 실제 $got"; fi
+  else bad "$impl rate $mult" "expected $want, got $got"; fi
 }
 if (( have_bash )); then
   # macOS / Linux: rate x 175 wpm
@@ -158,7 +158,7 @@ fi
 echo
 
 # ── Inputs that must be rejected ────────────────────────────────────────────
-echo "잘못된 입력은 양쪽 다 1 로, 제 문구로 죽는가"
+echo "Bad input exits 1 with our own message on both"
 # The exit code alone would pass a .NET exception stack or bash's "unbound
 # variable"; the first line must also be our own message.
 reject_case() {
@@ -166,76 +166,76 @@ reject_case() {
   local why='' rc msg
   if (( have_bash )); then
     msg=$(run_bash "$@" | head -1); rc=${PIPESTATUS[0]}
-    (( rc == 1 ))            || why+="bash 종료코드 $rc; "
-    [[ $msg == nautice:* ]]  || why+="bash 문구 '${msg:-(없음)}'; "
+    (( rc == 1 ))            || why+="bash exit $rc; "
+    [[ $msg == nautice:* ]]  || why+="bash message '${msg:-(none)}'; "
   fi
   if (( have_ps )); then
     msg=$(run_ps "$@" | head -1); rc=${PIPESTATUS[0]}
-    (( rc == 1 ))            || why+="ps 종료코드 $rc; "
-    [[ $msg == nautice:* ]]  || why+="ps 문구 '${msg:-(없음)}'; "
+    (( rc == 1 ))            || why+="ps exit $rc; "
+    [[ $msg == nautice:* ]]  || why+="ps message '${msg:-(none)}'; "
   fi
   if [[ -n $why ]]; then bad "$name" "$why"; else ok "$name"; fi
 }
-reject_case '모르는 옵션'   say --bogus x
-reject_case '모르는 명령'   bogus
-reject_case 'cache 모르는 인자' cache bogus
-reject_case 'list 모르는 인자'  list bogus
-reject_case '없는 사운드'   play NoSuchSound
+reject_case 'unknown option'   say --bogus x
+reject_case 'unknown command'  bogus
+reject_case 'cache bad argument' cache bogus
+reject_case 'list bad argument'  list bogus
+reject_case 'unknown sound'    play NoSuchSound
 # --plan must resolve sounds too, or a typo in a hook goes unnoticed.
-reject_case '없는 사운드 --plan' play NoSuchSound --plan
-reject_case '없는 톤'       alert -t NoSuchTone x
-reject_case '모르는 채널'   say -c bogus x
-reject_case '모르는 언어'   say -l xyz x
-reject_case '값 빠진 -l'    say -l
+reject_case 'unknown sound --plan' play NoSuchSound --plan
+reject_case 'unknown tone'     alert -t NoSuchTone x
+reject_case 'unknown channel'  say -c bogus x
+reject_case 'unknown language' say -l xyz x
+reject_case 'missing -l value' say -l
 # A sound has no text to put in a banner.
-reject_case 'play 에 visual' play -c visual ok
-reject_case 'play 에 both'   play -c both ok
-reject_case '--repeat 범위' say -n 99 x
-reject_case '--gap 범위'    say -g 99 x
-reject_case '--rate 범위'   say -r 0 x
-reject_case 'play 인자없음' play
+reject_case 'play with visual' play -c visual ok
+reject_case 'play with both'   play -c both ok
+reject_case '--repeat range'   say -n 99 x
+reject_case '--gap range'      say -g 99 x
+reject_case '--rate range'     say -r 0 x
+reject_case 'play without args' play
 # Missing values and non-numbers must fail with our message, not an internal error.
-reject_case '값 빠진 -v'    say -v
-reject_case '값 빠진 -V'    say -V
-reject_case '값 빠진 -r'    say -r
-reject_case '값 빠진 -n'    say -n
-reject_case '값 빠진 -g'    say -g
-reject_case '값 빠진 -t'    say -t
-reject_case '값 빠진 -c'    say -c
-reject_case '--vol 문자'    say -V xyz x
-reject_case '--rate 문자'   say -r abc x
-reject_case '--repeat 문자' say -n q x
+reject_case 'missing -v value' say -v
+reject_case 'missing -V value' say -V
+reject_case 'missing -r value' say -r
+reject_case 'missing -n value' say -n
+reject_case 'missing -g value' say -g
+reject_case 'missing -t value' say -t
+reject_case 'missing -c value' say -c
+reject_case '--vol letters'    say -V xyz x
+reject_case '--rate letters'   say -r abc x
+reject_case '--repeat letters' say -n q x
 # A decimal would crash bash's arithmetic and be rounded by PowerShell.
-reject_case '--repeat 소수' say -n 2.7 x
+reject_case '--repeat decimal' say -n 2.7 x
 # Comma decimals and trailing junk must not slip through as some number.
-reject_case '--vol 쉼표'    say -V 0,4 x
-reject_case '--vol 꼬리'    say -V 0.4abc x
+reject_case '--vol comma'      say -V 0,4 x
+reject_case '--vol trailing'   say -V 0.4abc x
 echo
 
 # ── Help lists every contract option ────────────────────────────────────────
-echo "도움말이 계약의 옵션을 다 적는가"
+echo "Help lists every contract option"
 for opt in --voice --lang --vol --rate --tone --channel --hold --repeat --gap --async --quiet; do
   miss=""
   (( have_bash )) && ! run_bash --help | grep -q -- "$opt" && miss="bash"
   (( have_ps ))   && ! run_ps   --help | grep -q -- "$opt" && miss="${miss:+$miss, }ps"
-  if [[ -n $miss ]]; then bad "$opt" "빠진 곳: $miss"; else ok "$opt"; fi
+  if [[ -n $miss ]]; then bad "$opt" "missing in: $miss"; else ok "$opt"; fi
 done
 echo
 
 # ── doctor and list ─────────────────────────────────────────────────────────
-echo "doctor 와 list 가 계약대로 말하는가"
+echo "doctor and list follow the contract"
 # doctor's exit code depends on what is installed, so only the header line —
 # version and backend — is checked.
 doctor_head='^nautice [0-9]+\.[0-9]+\.[0-9]+ \((macos|linux|windows)\)$'
 if (( have_bash )); then
   got=$(run_bash doctor | head -1)
-  if [[ $got =~ $doctor_head ]]; then ok "bash doctor 머리글"
-  else bad "bash doctor 머리글" "'$got'"; fi
+  if [[ $got =~ $doctor_head ]]; then ok "bash doctor header"
+  else bad "bash doctor header" "'$got'"; fi
 fi
 if (( have_ps )); then
   got=$(run_ps doctor | head -1)
-  if [[ $got =~ $doctor_head ]]; then ok "ps doctor 머리글"
-  else bad "ps doctor 머리글" "'$got'"; fi
+  if [[ $got =~ $doctor_head ]]; then ok "ps doctor header"
+  else bad "ps doctor header" "'$got'"; fi
 fi
 # The defaults line must format numbers alike; label padding differs, so only
 # the numbers are compared.
@@ -243,46 +243,46 @@ defaults_of() { sed -n 's/^.*\(vol=[0-9.]* rate=[0-9.]*\).*$/\1/p'; }
 if (( have_bash && have_ps )); then
   a=$(run_bash doctor | defaults_of)
   b=$(run_ps   doctor | defaults_of)
-  if [[ $a == "$b" && -n $a ]]; then ok "doctor 기본값 ($a)"
-  else bad "doctor 기본값" "bash '$a' / ps '$b'"; fi
+  if [[ $a == "$b" && -n $a ]]; then ok "doctor defaults ($a)"
+  else bad "doctor defaults" "bash '$a' / ps '$b'"; fi
 else
-  printf '  \033[33mskip\033[0m %s (%s)\n' "doctor 기본값" "$SKIP_WHY"
+  printf '  \033[33mskip\033[0m %s (%s)\n' "doctor defaults" "$SKIP_WHY"
 fi
 # Bundled tone names must match on every OS; OS system sounds are excluded.
-bundled() { sed -n '/^번들/,/^$/p' | sed -n 's/^  //p' | sort; }
+bundled() { sed -n '/^Bundled/,/^$/p' | sed -n 's/^  //p' | sort; }
 if (( have_bash && have_ps )); then
   a=$(run_bash list sounds | bundled)
   b=$(run_ps   list sounds | bundled)
-  if [[ $a == "$b" && -n $a ]]; then ok "list sounds 번들 이름표"
-  else bad "list sounds 번들 이름표" "$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | head -8)"; fi
+  if [[ $a == "$b" && -n $a ]]; then ok "list sounds: bundled names"
+  else bad "list sounds: bundled names" "$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | head -8)"; fi
 else
-  printf '  \033[33mskip\033[0m %s (%s)\n' "list sounds 번들 이름표" "$SKIP_WHY"
+  printf '  \033[33mskip\033[0m %s (%s)\n' "list sounds: bundled names" "$SKIP_WHY"
 fi
 echo
 
 # ── Version ─────────────────────────────────────────────────────────────────
 # The version lives in three files; bumping one splits --version from the nix
 # package. Read from files, so all three are checked on any machine.
-echo "버전이 세 곳에서 한 값인가"
+echo "Version is the same in all three places"
 v_nix=$(sed -n 's/.*version = "\([^"]*\)".*/\1/p' flake.nix | head -1)
 v_bash=$(sed -n 's/^VERSION=//p' "$BASH_IMPL")
 v_ps=$(tr -d '\r' < "$PS_IMPL" | sed -n "s/^\$VERSION = '\(.*\)'$/\1/p")
 for pair in "flake.nix:$v_nix" "bin/nautice:$v_bash" "bin/nautice.ps1:$v_ps"; do
   where=${pair%%:*} got=${pair#*:}
-  if [[ -z $got ]]; then bad "$where" "버전을 못 읽었다"
+  if [[ -z $got ]]; then bad "$where" "cannot read the version"
   elif [[ $got == "$v_nix" ]]; then ok "$where $got"
-  else bad "$where" "flake.nix 는 $v_nix, $where 는 $got"; fi
+  else bad "$where" "flake.nix has $v_nix, $where has $got"; fi
 done
 # And --version must actually print it.
 if (( have_bash )); then
   got=$(run_bash --version)
   if [[ $got == "nautice $v_bash" ]]; then ok "bash --version"
-  else bad "bash --version" "기대 'nautice $v_bash', 실제 '$got'"; fi
+  else bad "bash --version" "expected 'nautice $v_bash', got '$got'"; fi
 fi
 if (( have_ps )); then
   got=$(run_ps --version)
   if [[ $got == "nautice $v_ps" ]]; then ok "ps --version"
-  else bad "ps --version" "기대 'nautice $v_ps', 실제 '$got'"; fi
+  else bad "ps --version" "expected 'nautice $v_ps', got '$got'"; fi
 fi
 
 # docs/cli.md states call's default message verbatim; code and doc must agree.
@@ -291,45 +291,45 @@ if (( have_bash || have_ps )); then
   doc_call=$(sed -n 's/^`call` speaks `\([^`]*\)` by default.*$/\1/p' docs/cli.md | head -1)
   if (( have_bash )); then got=$(run_bash call --plan | sed -n 's/^text=//p')
   else                      got=$(run_ps   call --plan | sed -n 's/^text=//p'); fi
-  if [[ -n $doc_call && $doc_call == "$got" ]]; then ok "call 기본 문구 ($got)"
-  else bad 'call 기본 문구' "docs/cli.md 는 '${doc_call:-(못 읽음)}', 구현은 '$got'"; fi
+  if [[ -n $doc_call && $doc_call == "$got" ]]; then ok "call default text ($got)"
+  else bad 'call default text' "docs/cli.md says '${doc_call:-(unreadable)}', implementation says '$got'"; fi
 fi
 
 # The README's agent prompt names options. A renamed option would have agents
 # write broken config, noticed only afterwards.
-echo "README 의 에이전트 안내가 부르는 옵션이 있는가"
+echo "Options named in the README agent prompt exist"
 readme_opts=$(sed -n '/^## Wiring it to an agent/,/^## Layout/p' README.md \
   | grep -oE '`--?[a-z][a-z-]*' | tr -d '`' | sort -u)
-[[ -n $readme_opts ]] || bad 'README 안내' '옵션을 하나도 못 읽었다 (절 제목이 바뀌었나)'
+[[ -n $readme_opts ]] || bad 'README prompt' 'no options found (was the section renamed?)'
 for opt in $readme_opts; do
   miss=""
   (( have_bash )) && ! run_bash --help | grep -q -- "$opt" && miss="bash"
   (( have_ps ))   && ! run_ps   --help | grep -q -- "$opt" && miss="${miss:+$miss, }ps"
-  if [[ -n $miss ]]; then bad "README $opt" "도움말에 없다: $miss"; else ok "README $opt"; fi
+  if [[ -n $miss ]]; then bad "README $opt" "not in help: $miss"; else ok "README $opt"; fi
 done
 echo
 
 # ── Contract tone names exist in the bundle ─────────────────────────────────
 # A tone named in docs/cli.md but never generated fails at runtime; a file
 # nobody documents is never found.
-echo "계약의 이름표와 번들 파일이 맞는가"
+echo "Contract sound names match the bundled files"
 # shellcheck disable=SC2016  # the pattern matches literal Markdown backticks
 doc_tones=$(grep -F 'share/sounds/<name>.wav' docs/cli.md | grep -oE '`[a-z]+`' | tr -d '`' | sort)
 wav_tones=$(find share/sounds -name '*.wav' -exec basename {} .wav \; | sort)
 if [[ $doc_tones == "$wav_tones" && -n $doc_tones ]]; then
   ok "$(printf '%s' "$doc_tones" | tr '\n' ' ')"
 else
-  bad '이름표' "$(diff <(printf '%s\n' "$doc_tones") <(printf '%s\n' "$wav_tones") | head -8)"
+  bad 'sound names' "$(diff <(printf '%s\n' "$doc_tones") <(printf '%s\n' "$wav_tones") | head -8)"
 fi
 echo
 
 # ── Contract documents every environment variable ───────────────────────────
 # An undocumented variable is undiscoverable. Reads files only, so it runs anywhere.
-echo "계약이 환경변수를 다 적는가"
+echo "Contract documents every environment variable"
 impl_envs=$(grep -ohE 'NAUTICE_[A-Z_]+' "$BASH_IMPL" "$PS_IMPL" | sort -u)
 doc_envs=$(grep -ohE 'NAUTICE_[A-Z_]+' docs/cli.md | sort -u)
 for v in $impl_envs; do
-  if grep -qF "$v" docs/cli.md; then ok "$v"; else bad "$v" "구현이 읽는데 docs/cli.md 에 없다"; fi
+  if grep -qF "$v" docs/cli.md; then ok "$v"; else bad "$v" "read by an implementation but missing from docs/cli.md"; fi
 done
 # Names like NAUTICE_VOICE_KO are assembled at runtime; the source only has the
 # NAUTICE_VOICE_ prefix, so documented names under it count as covered.
@@ -338,9 +338,9 @@ for v in $doc_envs; do
   for i in $impl_envs; do
     if [[ $v == "$i" ]] || [[ $i == *_ && $v == "$i"* ]]; then covered=1; break; fi
   done
-  (( covered )) || bad "$v" "docs/cli.md 에 있는데 어느 구현도 안 읽는다"
+  (( covered )) || bad "$v" "in docs/cli.md but read by no implementation"
 done
 echo
 
-printf '%d 통과, %d 실패\n' "$pass" "$fail"
+printf '%d passed, %d failed\n' "$pass" "$fail"
 (( fail == 0 ))

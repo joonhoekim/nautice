@@ -20,7 +20,7 @@ single source of truth; never change only one implementation —
 | `nautice doctor` | Checks the environment and lists the languages that have a voice; 0 when healthy |
 | `nautice cache [info\|clear]` | Render cache |
 
-`call` speaks `에이전트가 부릅니다` by default ("the agent is calling"). The
+`call` speaks `Your agent is calling` by default. The
 tool is not tied to any agent; to name yours, set `NAUTICE_CALL_MESSAGE`. It is
 spoken twice, so keep it short.
 

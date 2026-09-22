@@ -28,7 +28,7 @@ function Die($msg)  { [Console]::Error.WriteLine("nautice: $msg"); exit 1 }
 # would run first and fail where %LOCALAPPDATA% does not exist.
 $Prefix = Get-EnvOr 'NAUTICE_PREFIX' ''
 if (-not $Prefix) {
-    if (-not $env:LOCALAPPDATA) { Die '%LOCALAPPDATA% 가 없다. NAUTICE_PREFIX 로 설치 위치를 지정하라' }
+    if (-not $env:LOCALAPPDATA) { Die '%LOCALAPPDATA% is not set; set NAUTICE_PREFIX' }
     $Prefix = [IO.Path]::Combine($env:LOCALAPPDATA, 'Programs', 'nautice')
 }
 $Version = Get-EnvOr 'NAUTICE_VERSION' 'latest'
@@ -70,7 +70,7 @@ if ((Get-EnvOr 'NAUTICE_UNINSTALL' '') -eq '1') {
     }
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue ([IO.Path]::Combine($Prefix, 'share', 'nautice'))
     Remove-UserPath $BinDir
-    Say "지웠다: $Prefix (PATH 항목도 뺐다)"
+    Say "removed from $Prefix (PATH entry too)"
     exit 0
 }
 
@@ -83,7 +83,7 @@ function Get-File($url, $dest) {
         $ProgressPreference = 'SilentlyContinue'
         try { Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing }
         finally { $ProgressPreference = $old }
-    } catch { Die "못 받았다: $url ($($_.Exception.Message))" }
+    } catch { Die "download failed: $url ($($_.Exception.Message))" }
 }
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("nautice." + [IO.Path]::GetRandomFileName())
@@ -94,11 +94,11 @@ try {
         # Lets CI exercise the real install path without a release.
         if (Test-Path -LiteralPath $Archive -PathType Leaf) { Copy-Item -LiteralPath $Archive $zip }
         else { Get-File $Archive $zip }
-        Say "아카이브: $Archive (해시 검증 건너뜀)"
+        Say "archive: $Archive (hash check skipped)"
     } else {
         $base = if ($Version -eq 'latest') { "https://github.com/$Repo/releases/latest/download" }
                 else                       { "https://github.com/$Repo/releases/download/$Version" }
-        Say "받는 중: $base/$Asset"
+        Say "downloading $base/$Asset"
         Get-File "$base/$Asset" $zip
         $sums = Join-Path $tmp 'SHA256SUMS'
         Get-File "$base/SHA256SUMS" $sums
@@ -108,21 +108,21 @@ try {
             $f = $line -split '\s+'
             if ($f.Count -ge 2 -and $f[1] -eq $Asset) { $want = $f[0] }
         }
-        if (-not $want) { Die "SHA256SUMS 에 $Asset 이 없다" }
+        if (-not $want) { Die "$Asset is not listed in SHA256SUMS" }
         $got = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
-        if ($got -ne $want.ToLower()) { Die "해시가 다르다 (기대 $want, 실제 $got)" }
-        Say '해시 확인됨'
+        if ($got -ne $want.ToLower()) { Die "hash mismatch (expected $want, got $got)" }
+        Say 'hash verified'
     }
 
     # ── Extract and copy ────────────────────────────────────────────────────
     $out = Join-Path $tmp 'x'
     try { Expand-Archive -LiteralPath $zip -DestinationPath $out -Force }
-    catch { Die "아카이브를 못 풀었다 (받다 끊겼을 수 있다): $($_.Exception.Message)" }
+    catch { Die "cannot extract the archive (download may be truncated): $($_.Exception.Message)" }
 
     $src = Get-ChildItem -Directory $out | Where-Object { $_.Name -like 'nautice-*' } | Select-Object -First 1
-    if (-not $src) { Die '아카이브 안에 nautice-* 디렉터리가 없다' }
+    if (-not $src) { Die 'the archive has no nautice-* directory' }
     $srcBin = Join-Path $src.FullName 'bin'
-    if (-not (Test-Path (Join-Path $srcBin 'nautice.ps1'))) { Die '아카이브 안에 bin/nautice.ps1 이 없다' }
+    if (-not (Test-Path (Join-Path $srcBin 'nautice.ps1'))) { Die 'the archive has no bin/nautice.ps1' }
 
     $soundDir = [IO.Path]::Combine($Prefix, 'share', 'nautice', 'sounds')
     New-Item -ItemType Directory -Path $BinDir   -Force | Out-Null
@@ -134,18 +134,18 @@ try {
     # backends, not a failed install, so it is not checked.
     $ps1 = Join-Path $BinDir 'nautice.ps1'
     $ver = & $ps1 --version
-    if ($LASTEXITCODE -ne 0 -or -not $ver) { Die '설치본이 --version 을 못 냈다' }
-    Say "설치됨: $ps1 ($ver)"
+    if ($LASTEXITCODE -ne 0 -or -not $ver) { Die 'the installed copy failed to run --version' }
+    Say "installed $ps1 ($ver)"
 
-    if (Add-UserPath $BinDir) { Say "PATH 에 넣었다: $BinDir (새 셸부터 반영된다)" }
-    else                      { Say "PATH 에 이미 있다: $BinDir" }
+    if (Add-UserPath $BinDir) { Say "added to PATH: $BinDir (applies to new shells)" }
+    else                      { Say "already on PATH: $BinDir" }
 
     # Runtime dependencies are not installed; doctor reports what is missing.
     Write-Output ''
     & $ps1 doctor
     $global:LASTEXITCODE = 0
     Write-Output ''
-    Say '에이전트에 물리는 법은 README 와 docs/agent-setup.md 에 있다'
+    Say 'to wire it to an agent, see README and docs/agent-setup.md'
 } finally {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmp
 }

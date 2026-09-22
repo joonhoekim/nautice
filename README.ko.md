@@ -9,7 +9,7 @@
 에이전트가 사람의 주의를 끄는 알림 CLI. **Windows · Linux · macOS.**
 
 ```
-nautice call                          # 차임 + "에이전트가 부릅니다", 2회
+nautice call                          # 차임 + "Your agent is calling", 2회
 nautice say "빌드가 끝났습니다"
 nautice play ok
 nautice alert -t warn -n 3 "디스크가 찼습니다"
@@ -119,7 +119,7 @@ nix profile remove nautice                         # 지우기
 
 **Windows** 는 설치된 언어팩의 음성만 보인다 — 그 언어가 없으면 다른 음성으로
 떨어진다. 품질 등급은 노출되지 않아서 `best` 가 `auto` 와 같다.
-`nautice doctor` 의 "보이스 언어" 줄이 무엇이 있는지 알려준다.
+`nautice doctor` 의 `languages` 줄이 무엇이 있는지 알려준다.
 
 **Linux 는 한국어가 약하다.** `espeak-ng` 는 포먼트 합성이라 거칠고, `piper` 의
 공식 보이스에는 쓸 만한 한국어가 없다. 모델을 따로 구했으면

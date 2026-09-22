@@ -48,7 +48,7 @@ $Defaults = @{
 }
 
 # Neutral on purpose: the tool is not tied to any agent. Spoken twice, so short.
-$CallMessage = Get-Env 'NAUTICE_CALL_MESSAGE' '에이전트가 부릅니다'
+$CallMessage = Get-Env 'NAUTICE_CALL_MESSAGE' 'Your agent is calling'
 
 function Die($msg) { [Console]::Error.WriteLine("nautice: $msg"); exit 1 }
 
@@ -62,13 +62,13 @@ $ValueOpts = @('-v', '--voice', '-V', '--vol', '-r', '--rate',
 # A bare [double] cast would show `-r abc` as a .NET exception stack.
 function ConvertTo-Num([string] $v, [string] $label) {
     # Pin the syntax with a regex; a culture-aware parser would reintroduce the bug.
-    if ($v -notmatch '^[+-]?(\d+(\.\d*)?|\.\d+)$') { Die "$label 은 숫자다: $v" }
+    if ($v -notmatch '^[+-]?(\d+(\.\d*)?|\.\d+)$') { Die "$label must be a number: $v" }
     return [double]::Parse($v, [Globalization.CultureInfo]::InvariantCulture)
 }
 
 # --repeat must be an integer: [int] would round 2.7 to 3, while bash crashes.
 function ConvertTo-Int([string] $v, [string] $label) {
-    if ($v -notmatch '^[+-]?\d+$') { Die "$label 은 정수다: $v" }
+    if ($v -notmatch '^[+-]?\d+$') { Die "$label must be an integer: $v" }
     return [int]::Parse($v, [Globalization.CultureInfo]::InvariantCulture)
 }
 
@@ -85,7 +85,7 @@ function Parse-Args([string[]] $argv) {
         $a = $argv[$i]
         # Catch a missing value before the switch reads $argv[$i + 1], or
         # `nautice say -r` shows an IndexOutOfRange stack. -ccontains is case-sensitive.
-        if (($ValueOpts -ccontains $a) -and ($i + 1 -ge $argv.Count)) { Die "$a 에 값이 없다" }
+        if (($ValueOpts -ccontains $a) -and ($i + 1 -ge $argv.Count)) { Die "$a needs a value" }
         $needsValue = $true
         switch -CaseSensitive ($a) {
             { $_ -ceq '-v' -or $_ -ceq '--voice'  } { $o.Voice = $argv[$i + 1] }
@@ -104,7 +104,7 @@ function Parse-Args([string[]] $argv) {
             { $_ -ceq '--version' }                 { Write-Output "nautice $VERSION"; exit 0 }
             '--' { for ($j = $i + 1; $j -lt $argv.Count; $j++) { $rest.Add($argv[$j]) }; $i = $argv.Count; $needsValue = $false }
             default {
-                if ($a -like '-*') { Die "모르는 옵션: $a" }
+                if ($a -like '-*') { Die "unknown option: $a" }
                 $rest.Add($a); $needsValue = $false
             }
         }
@@ -119,7 +119,7 @@ function Parse-Args([string[]] $argv) {
 
 function Assert-Range($value, $lo, $hi, $label) {
     if ($null -eq $value) { return }
-    if ($value -lt $lo -or $value -gt $hi) { Die "$label 은 $lo ~ $hi 이다: $value" }
+    if ($value -lt $lo -or $value -gt $hi) { Die "$label must be between $lo and ${hi}: $value" }
 }
 
 # ── Unit conversion ─────────────────────────────────────────────────────────
@@ -185,12 +185,12 @@ function Show-HeldToast([string] $text) {
     try {
         [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
         [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
-    } catch { Die "--hold 에 필요한 WinRT 알림 API 를 못 불러왔다: $($_.Exception.Message)" }
+    } catch { Die "cannot load the WinRT notification API needed by --hold: $($_.Exception.Message)" }
     $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
     $doc.LoadXml(@"
 <toast scenario="reminder">
   <visual><binding template="ToastGeneric"><text>nautice</text><text>$([Security.SecurityElement]::Escape($text))</text></binding></visual>
-  <actions><action content="확인" arguments="dismiss" activationType="system"/></actions>
+  <actions><action content="Dismiss" arguments="dismiss" activationType="system"/></actions>
 </toast>
 "@)
     $toast = New-Object Windows.UI.Notifications.ToastNotification $doc
@@ -220,7 +220,7 @@ function Close-Banner($b) {
 
 # Suffix for the status line when a banner was shown too.
 function Get-ChanNote([hashtable] $o) {
-    if ($o.Channel -ceq 'sound') { return '' } else { return ' +배너' }
+    if ($o.Channel -ceq 'sound') { return '' } else { return ' +banner' }
 }
 
 # ── Sounds ──────────────────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ function Get-SoundsDir {
         $p = Join-Path $here $c
         if (Test-Path $p) { return (Resolve-Path $p).Path }
     }
-    Die '번들 효과음을 못 찾았다. NAUTICE_SOUNDS 로 경로를 지정하라'
+    Die 'bundled sounds not found; set NAUTICE_SOUNDS'
 }
 
 # Bundled sounds first, so a tone means the same thing on every OS.
@@ -244,7 +244,7 @@ function Resolve-Sfx([string] $name) {
         $media = Join-Path $env:SystemRoot "Media\$name.wav"
         if (Test-Path $media) { return $media }
     }
-    Die "그런 사운드가 없다: $name (nautice list sounds)"
+    Die "no such sound: $name (nautice list sounds)"
 }
 
 # ── TTS ─────────────────────────────────────────────────────────────────────
@@ -256,7 +256,7 @@ function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
     $synth.Volume = ConvertTo-SapiVolume ([double](Coalesce $o.Vol $Defaults.Vol))
 
     $installed = @($synth.GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo })
-    if (-not $installed) { Die '설치된 음성이 하나도 없다' }
+    if (-not $installed) { Die 'no voices installed' }
 
     $want = if ($o.Voice) { $o.Voice } else { $Defaults.Voice }
     if ($want -eq 'auto' -or $want -eq 'best') {
@@ -269,7 +269,7 @@ function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
     $pick = $null
     if ($want) {
         $pick = $installed | Where-Object { $_.Name -like "*$want*" } | Select-Object -First 1
-        if (-not $pick) { Die "그런 보이스가 없다: $want (nautice list voices)" }
+        if (-not $pick) { Die "no such voice: $want (nautice list voices)" }
     }
     # Voice for the language, else fall back rather than fail (docs/cli.md).
     # Only installed language packs have voices, so this falls back often.
@@ -333,7 +333,7 @@ function Write-Status([hashtable] $o, [string] $line) {
 
 function Read-Text([hashtable] $o) {
     $text = ($o.Rest -join ' ').Trim()
-    if (-not $text -and -not [Console]::IsInputRedirected) { Die '말할 내용이 없다' }
+    if (-not $text -and -not [Console]::IsInputRedirected) { Die 'nothing to say' }
     # Read stdin as UTF-8 ourselves: [Console]::In decodes with the console code
     # page and turns Korean into garbage on CP437. --plan round-trips through the
     # same code page, so the damage is invisible there.
@@ -341,7 +341,7 @@ function Read-Text([hashtable] $o) {
         $reader = New-Object System.IO.StreamReader ([Console]::OpenStandardInput()), (New-Object System.Text.UTF8Encoding $false)
         try { $text = ($reader.ReadToEnd()).Trim() } finally { $reader.Dispose() }
     }
-    if (-not $text) { Die '말할 내용이 없다' }
+    if (-not $text) { Die 'nothing to say' }
     return $text
 }
 
@@ -350,7 +350,7 @@ function Invoke-Say([hashtable] $o) {
     $text = Read-Text $o
     if ($o.Plan) { Write-Plan $o 'say' '' $text; return }
     $banner = New-Banner $o $text
-    if ($o.Channel -ceq 'visual') { Write-Status $o 'say 배너만'; Close-Banner $banner; return }
+    if ($o.Channel -ceq 'visual') { Write-Status $o 'say banner only'; Close-Banner $banner; return }
     $synth = New-Synth $o $text (Resolve-Lang $o $text)
     try {
         Write-Status $o "say x$($o.Repeat) [$($synth.Voice.Name)]$(Get-ChanNote $o)"
@@ -359,9 +359,9 @@ function Invoke-Say([hashtable] $o) {
 }
 
 function Invoke-Play([hashtable] $o) {
-    if ($o.Rest.Count -eq 0) { Die '사운드 이름이나 경로가 필요하다 (nautice list sounds)' }
+    if ($o.Rest.Count -eq 0) { Die 'need a sound name or path (nautice list sounds)' }
     # A sound has no text to put in a banner.
-    if ($o.Channel -cne 'sound') { Die 'play 는 문구가 없어 시각 채널을 못 쓴다 (--channel sound)' }
+    if ($o.Channel -cne 'sound') { Die 'play has no text for a banner (use --channel sound)' }
     # Resolve before planning: an unknown sound fails under --plan too, as in bash.
     $file = Resolve-Sfx $o.Rest[0]
     if ($o.Plan) { Write-Plan $o 'play' $o.Rest[0] ''; return }
@@ -375,7 +375,7 @@ function Invoke-Alert([hashtable] $o) {
     $tone = if ($o.Tone) { $o.Tone } else { 'ask' }
     if ($o.Plan) { Write-Plan $o $o.PlanName $tone $text; return }
     $banner = New-Banner $o $text
-    if ($o.Channel -ceq 'visual') { Write-Status $o "$($o.PlanName) 배너만"; Close-Banner $banner; return }
+    if ($o.Channel -ceq 'visual') { Write-Status $o "$($o.PlanName) banner only"; Close-Banner $banner; return }
     $chime = Resolve-Sfx $tone
     $synth = New-Synth $o $text (Resolve-Lang $o $text)
     try {
@@ -396,12 +396,12 @@ function Invoke-List([hashtable] $o) {
     $what = if ($o.Rest.Count -gt 0) { $o.Rest[0] } else { 'all' }
     switch ($what) {
         'sounds' {
-            Write-Output '번들 (세 OS 공통):'
+            Write-Output 'Bundled (all OSes):'
             Get-ChildItem (Get-SoundsDir) -Filter *.wav | ForEach-Object { "  $($_.BaseName)" }
             $media = if ($env:SystemRoot) { Join-Path $env:SystemRoot 'Media' } else { $null }
             if ($media -and (Test-Path $media)) {
                 Write-Output ''
-                Write-Output 'Windows 시스템 사운드:'
+                Write-Output 'Windows system sounds:'
                 Get-ChildItem $media -Filter *.wav | ForEach-Object { "  $($_.BaseName)" }
             }
         }
@@ -419,7 +419,7 @@ function Invoke-List([hashtable] $o) {
             Write-Output ''
             Invoke-List @{ Rest = @('voices'); Quiet = $o.Quiet }
         }
-        default { Die 'list 대상: voices | sounds | all' }
+        default { Die 'list what: voices | sounds | all' }
     }
 }
 
@@ -432,65 +432,65 @@ function Invoke-Doctor([hashtable] $o) {
         $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
         $voices = @($s.GetInstalledVoices() | Where-Object { $_.Enabled })
         $s.Dispose()
-        Write-Output ("  {0,-11} System.Speech — 음성 {1}개" -f 'TTS', $voices.Count)
+        Write-Output ("  {0,-12} System.Speech ({1} voices)" -f 'TTS', $voices.Count)
         if ($voices.Count -eq 0) { $ok = 1 }
         # Languages with a voice. Others fall back silently under -q.
         $langs = @($voices | ForEach-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName } | Sort-Object -Unique)
-        Write-Output ("  {0,-11} {1} — 더하려면 설정 > 시간 및 언어 > 음성" -f '보이스 언어', ($langs -join ' '))
+        Write-Output ("  {0,-12} {1} (add more: Settings > Time & language > Speech)" -f 'languages', ($langs -join ' '))
     } catch {
-        Write-Output ("  {0,-11} System.Speech 를 못 불러왔다: {1}" -f 'TTS', $_.Exception.Message)
+        Write-Output ("  {0,-12} cannot load System.Speech: {1}" -f 'TTS', $_.Exception.Message)
         $ok = 1
     }
-    Write-Output ("  {0,-11} System.Media.SoundPlayer — 볼륨을 못 받는다. --vol 은 TTS 에만 걸린다" -f '재생기')
-    Write-Output ("  {0,-11} System.Windows.Forms.NotifyIcon — 데스크톱 세션이 있어야 뜬다" -f '배너')
-    Write-Output ("  {0,-11} {1}" -f '효과음', (Get-SoundsDir))
-    Write-Output ("  {0,-11} 쓰지 않는다 (SAPI 가 볼륨·속도를 직접 받는다)" -f '캐시')
+    Write-Output ("  {0,-12} System.Media.SoundPlayer (no volume control; --vol applies to TTS only)" -f 'player')
+    Write-Output ("  {0,-12} System.Windows.Forms.NotifyIcon (needs a desktop session)" -f 'banner')
+    Write-Output ("  {0,-12} {1}" -f 'sounds', (Get-SoundsDir))
+    Write-Output ("  {0,-12} not used (SAPI takes volume and rate directly)" -f 'cache')
     # Same F3 format as --plan; a bare [double]1.0 prints "1", unlike bash's "1.0".
-    Write-Output ("  {0,-11} vol={1:F3} rate={2:F3}" -f '기본값', $Defaults.Vol, $Defaults.Rate)
+    Write-Output ("  {0,-12} vol={1:F3} rate={2:F3}" -f 'defaults', $Defaults.Vol, $Defaults.Rate)
     exit $ok
 }
 
 function Invoke-Cache([hashtable] $o) {
     # Nothing to clear on Windows, but still reject unknown arguments.
     $what = if ($o.Rest.Count -gt 0) { $o.Rest[0] } else { 'info' }
-    if ($what -cne 'info' -and $what -cne 'clear') { Die 'cache 대상: info | clear' }
-    Write-Output '이 플랫폼은 렌더 캐시를 쓰지 않는다 (SAPI 가 볼륨·속도를 직접 받는다)'
+    if ($what -cne 'info' -and $what -cne 'clear') { Die 'cache what: info | clear' }
+    Write-Output 'no render cache on this platform (SAPI takes volume and rate directly)'
 }
 
 function Show-Usage {
     @'
-nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
+nautice — a notification CLI that lets an agent get a human's attention
 
-사용법
-  nautice say   [옵션] <문구>       읽는다 (생략시 stdin)
-  nautice play  [옵션] <이름|경로>  효과음을 낸다
-  nautice alert [옵션] <문구>       효과음 뒤에 읽는다
-  nautice call  [옵션] [문구]       사람을 부른다 (alert + 기본문구, 2회)
-  nautice list  [voices|sounds]     목록
-  nautice doctor                    환경 점검
-  nautice cache [info|clear]        렌더 캐시
+Usage
+  nautice say   [options] <text>        speak (stdin if omitted)
+  nautice play  [options] <name|path>   play a sound
+  nautice alert [options] <text>        play a sound, then speak
+  nautice call  [options] [text]        call the human (alert + default text, twice)
+  nautice list  [voices|sounds]         list voices or sounds
+  nautice doctor                        check the environment
+  nautice cache [info|clear]            render cache
 
-옵션
-  -v, --voice NAME   보이스 (auto | best | 이름)
-  -V, --vol N        0.0 ~ 1.0            (기본 0.6, 효과음에는 안 걸린다)
-  -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
-  -t, --tone NAME    alert/call 의 효과음  (기본 ask)
-  -c, --channel NAME sound | visual | both (기본 sound)
-  -l, --lang CODE    두 글자 언어 코드     (기본 auto — 문구에서 가린다)
-      --hold         배너를 지울 때까지 띄워 둔다 (시각 채널에만)
-  -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
-  -g, --gap SEC      반복 사이 간격        (기본 0.4)
-  -a, --async        기다리지 않고 반환 (훅에서 필수)
-  -q, --quiet        상태 줄을 찍지 않는다
+Options
+  -v, --voice NAME    voice (auto | best | name)
+  -V, --vol N         0.0 to 1.0                (default 0.6; not applied to sounds)
+  -r, --rate N        speed multiplier, 1.0 = normal (default 1.0)
+  -t, --tone NAME     sound for alert/call      (default ask)
+  -c, --channel NAME  sound | visual | both     (default sound)
+  -l, --lang CODE     two-letter language code  (default auto: from the text)
+      --hold          keep the banner until dismissed (visual channel only)
+  -n, --repeat N      integer 1 to 20           (default 1, call 2)
+  -g, --gap SEC       pause between repetitions (default 0.4)
+  -a, --async         return without waiting (required in hooks)
+  -q, --quiet         no status line
 
-효과음 이름표: ok error warn ask start notify
+Sounds: ok error warn ask start notify
 
-예시
+Examples
   nautice call
-  nautice say "빌드가 끝났습니다"
-  nautice alert -t warn -n 3 "디스크가 찼습니다"
+  nautice say "Build finished"
+  nautice alert -t warn -n 3 "Disk is full"
   nautice play -V 0.3 ok
-  nautice call -c both              # 소리 + 알림 배너
+  nautice call -c both                  # sound + notification banner
 '@ | Write-Output
 }
 
@@ -504,12 +504,12 @@ Assert-Range $o.Gap    0   10 '--gap'
 
 if (-not $o.Lang) { $o.Lang = $Defaults.Lang }
 if ($o.Lang -cne 'auto' -and $o.Lang -notmatch '^[a-z]{2}$') {
-    Die "--lang 은 auto 이거나 두 글자 언어 코드다: $($o.Lang)"
+    Die "--lang must be auto or a two-letter language code: $($o.Lang)"
 }
 
 if (-not $o.Channel) { $o.Channel = $Defaults.Channel }
 if ($o.Channel -cne 'sound' -and $o.Channel -cne 'visual' -and $o.Channel -cne 'both') {
-    Die "--channel 은 sound | visual | both 다: $($o.Channel)"
+    Die "--channel must be sound, visual or both: $($o.Channel)"
 }
 
 # Start-Process joins -ArgumentList with spaces and no quoting. Voice names
@@ -543,5 +543,5 @@ switch ($o.Command) {
     'cache'  { Invoke-Cache $o }
     ''       { Show-Usage }
     'help'   { Show-Usage }
-    default  { Die "모르는 명령: $($o.Command) (nautice --help)" }
+    default  { Die "unknown command: $($o.Command) (nautice --help)" }
 }

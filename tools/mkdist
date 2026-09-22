@@ -57,11 +57,11 @@ def version():
     }
     missing = [k for k, m in found.items() if not m]
     if missing:
-        sys.exit(f"mkdist: 버전을 못 읽었다: {', '.join(missing)}")
+        sys.exit(f"mkdist: cannot read the version from: {', '.join(missing)}")
     vals = {k: m.group(1) for k, m in found.items()}
     if len(set(vals.values())) != 1:
         detail = ", ".join(f"{k}={v}" for k, v in vals.items())
-        sys.exit(f"mkdist: 버전이 세 곳에서 다르다 ({detail})")
+        sys.exit(f"mkdist: versions differ ({detail})")
     return next(iter(vals.values()))
 
 
@@ -94,13 +94,13 @@ def write_zip(path, root, entries):
 
 def main():
     if not SOUNDS:
-        sys.exit("mkdist: share/sounds 에 .wav 가 없다 (tools/gen-sounds.py)")
+        sys.exit("mkdist: no .wav in share/sounds (run tools/gen-sounds.py)")
     ver = version()
     root = f"nautice-{ver}"
 
     for name, src, _ in COMMON + WINDOWS_ONLY:
         if not src.is_file():
-            sys.exit(f"mkdist: {src} 가 없다")
+            sys.exit(f"mkdist: missing {src}")
 
     DIST.mkdir(exist_ok=True)
     for stale in DIST.iterdir():

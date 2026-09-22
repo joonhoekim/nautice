@@ -22,8 +22,8 @@ if [[ ${NAUTICE_UNINSTALL:-} == 1 ]]; then
   # Leave $PREFIX itself: it is shared with other software.
   rm -f  "$PREFIX/bin/nautice" "$PREFIX/bin/nautice.ps1" "$PREFIX/bin/nautice.cmd"
   rm -rf "$PREFIX/share/nautice"
-  say "지웠다: $PREFIX"
-  say "캐시는 남아 있다 — 지우려면 rm -rf \"\${XDG_CACHE_HOME:-\$HOME/.cache}/nautice\""
+  say "removed from $PREFIX"
+  say "the cache remains; to remove it: rm -rf \"\${XDG_CACHE_HOME:-\$HOME/.cache}/nautice\""
   exit 0
 fi
 
@@ -32,7 +32,7 @@ fetch() {
   # Without -f a 404 page is saved as the archive and tar fails confusingly.
   if   command -v curl >/dev/null 2>&1; then curl -fsSL -o "$2" -- "$1"
   elif command -v wget >/dev/null 2>&1; then wget -qO  "$2" -- "$1"
-  else die "curl 도 wget 도 없다"
+  else die "neither curl nor wget found"
   fi
 }
 
@@ -43,41 +43,41 @@ sha256_of() {
   fi
 }
 
-command -v tar >/dev/null 2>&1 || die "tar 가 없다"
+command -v tar >/dev/null 2>&1 || die "tar not found"
 
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/nautice.XXXXXX") || die "임시 디렉터리를 못 만들었다"
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/nautice.XXXXXX") || die "cannot create a temporary directory"
 trap 'rm -rf "$TMP"' EXIT
 
 tarball="$TMP/$ASSET"
 if [[ -n $ARCHIVE ]]; then
   # Lets CI exercise the real install path without a release.
   if [[ -f $ARCHIVE ]]; then cp -- "$ARCHIVE" "$tarball"
-  else fetch "$ARCHIVE" "$tarball" || die "못 받았다: $ARCHIVE"
+  else fetch "$ARCHIVE" "$tarball" || die "download failed: $ARCHIVE"
   fi
-  say "아카이브: $ARCHIVE (해시 검증 건너뜀)"
+  say "archive: $ARCHIVE (hash check skipped)"
 else
   if [[ $VERSION == latest ]]; then base="https://github.com/$REPO/releases/latest/download"
   else                              base="https://github.com/$REPO/releases/download/$VERSION"
   fi
-  say "받는 중: $base/$ASSET"
-  fetch "$base/$ASSET"   "$tarball"        || die "못 받았다: $base/$ASSET"
-  fetch "$base/SHA256SUMS" "$TMP/SHA256SUMS" || die "못 받았다: $base/SHA256SUMS"
+  say "downloading $base/$ASSET"
+  fetch "$base/$ASSET"   "$tarball"        || die "download failed: $base/$ASSET"
+  fetch "$base/SHA256SUMS" "$TMP/SHA256SUMS" || die "download failed: $base/SHA256SUMS"
 
   want=$(awk -v f="$ASSET" '$2 == f { print $1 }' "$TMP/SHA256SUMS")
-  [[ -n $want ]] || die "SHA256SUMS 에 $ASSET 이 없다"
+  [[ -n $want ]] || die "$ASSET is not listed in SHA256SUMS"
   if got=$(sha256_of "$tarball"); then
-    [[ $got == "$want" ]] || die "해시가 다르다 (기대 $want, 실제 $got)"
-    say "해시 확인됨"
+    [[ $got == "$want" ]] || die "hash mismatch (expected $want, got $got)"
+    say "hash verified"
   else
     # Do not block the install on a missing tool, but say so.
-    say "sha256 도구가 없어 검증을 건너뛴다 (sha256sum / shasum)"
+    say "no sha256 tool, skipping verification (sha256sum or shasum)"
   fi
 fi
 
 # ── Extract and copy ────────────────────────────────────────────────────────
-tar xzf "$tarball" -C "$TMP" || die "아카이브를 못 풀었다 (받다 끊겼을 수 있다)"
+tar xzf "$tarball" -C "$TMP" || die "cannot extract the archive (download may be truncated)"
 src=$(find "$TMP" -maxdepth 1 -type d -name 'nautice-*' | head -1)
-[[ -n $src && -f $src/bin/nautice ]] || die "아카이브 안에 bin/nautice 가 없다"
+[[ -n $src && -f $src/bin/nautice ]] || die "the archive has no bin/nautice"
 
 mkdir -p "$PREFIX/bin" "$PREFIX/share/nautice/sounds"
 cp -f "$src/bin/nautice" "$PREFIX/bin/nautice"
@@ -86,8 +86,8 @@ cp -f "$src"/share/nautice/sounds/*.wav "$PREFIX/share/nautice/sounds/"
 
 # Installed means the installed copy runs. doctor's exit code reflects missing
 # backends, not a failed install, so it is not checked.
-ver=$("$PREFIX/bin/nautice" --version) || die "설치본이 --version 을 못 냈다"
-say "설치됨: $PREFIX/bin/nautice ($ver)"
+ver=$("$PREFIX/bin/nautice" --version) || die "the installed copy failed to run --version"
+say "installed $PREFIX/bin/nautice ($ver)"
 
 # ── PATH hint ───────────────────────────────────────────────────────────────
 # Never edit shell rc files: they belong to the user, and lines written by an
@@ -95,7 +95,7 @@ say "설치됨: $PREFIX/bin/nautice ($ver)"
 case ":${PATH:-}:" in
   *":$PREFIX/bin:"*) ;;
   *)
-    say "$PREFIX/bin 이 PATH 에 없다. 셸 설정에 이 줄을 붙인다:"
+    say "$PREFIX/bin is not on PATH; add this line to your shell config:"
     # shellcheck disable=SC2016  # $PATH is literal text for the user to paste
     printf '\n  export PATH="%s/bin:$PATH"\n\n' "$PREFIX" ;;
 esac
@@ -105,4 +105,4 @@ esac
 echo
 "$PREFIX/bin/nautice" doctor || true
 echo
-say "에이전트에 물리는 법은 README 와 docs/agent-setup.md 에 있다"
+say "to wire it to an agent, see README and docs/agent-setup.md"

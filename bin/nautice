@@ -18,7 +18,7 @@ VERSION=0.4.0
 : "${NAUTICE_PIPER_MODEL:=}"
 : "${NAUTICE_CHANNEL:=sound}"
 # Neutral on purpose: the tool is not tied to any agent. Users can name theirs.
-: "${NAUTICE_CALL_MESSAGE:=에이전트가 부릅니다}"
+: "${NAUTICE_CALL_MESSAGE:=Your agent is calling}"
 
 # Normal speed for say and espeak-ng, i.e. rate 1.0. On macOS `say -r 175` and
 # say without -r produce the same duration (Yuna Premium, 2.53 s).
@@ -34,7 +34,7 @@ hash_stdin() {
   if   command -v shasum  >/dev/null 2>&1; then shasum
   elif command -v sha1sum >/dev/null 2>&1; then sha1sum
   elif command -v md5sum  >/dev/null 2>&1; then md5sum
-  else die "해시 도구가 없다 (shasum / sha1sum / md5sum 중 하나가 필요하다)"
+  else die "no hash tool (need shasum, sha1sum or md5sum)"
   fi
 }
 say_status() { [[ $OPT_QUIET == 1 ]] || printf 'nautice: %s\n' "$*"; }
@@ -60,7 +60,7 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     exec powershell -NoProfile -ExecutionPolicy Bypass \
       -File "$(script_dir)/nautice.ps1" "$@" ;;
-  *) die "이 스크립트는 macOS 와 Linux 용이다 ($(uname -s)). Windows 는 nautice.ps1 을 쓴다" ;;
+  *) die "this script is for macOS and Linux ($(uname -s)); on Windows use nautice.ps1" ;;
 esac
 
 find_sounds() {
@@ -70,7 +70,7 @@ find_sounds() {
   for c in "$d/../share/sounds" "$d/../share/nautice/sounds"; do
     [[ -d $c ]] && { cd -P "$c" && pwd; return; }
   done
-  die "번들 효과음을 못 찾았다. NAUTICE_SOUNDS 로 경로를 지정하라"
+  die "bundled sounds not found; set NAUTICE_SOUNDS"
 }
 
 # ── Audio playback ──────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ audio_play() {
     afplay -v "$vol" "$file"
     return
   fi
-  local p; p=$(linux_player) || die "재생기가 없다 (pw-play/paplay/aplay/ffplay/mpv 중 하나가 필요하다)"
+  local p; p=$(linux_player) || die "no audio player (need pw-play, paplay, aplay, ffplay or mpv)"
   case $p in
     pw-play) pw-play --volume="$vol" "$file" ;;
     paplay)  paplay --volume="$(awk -v v="$vol" 'BEGIN{printf "%d", v*65536}')" "$file" ;;
@@ -118,7 +118,7 @@ visual_backend() {
 banner_show() {
   local text=$1 b; b=$(visual_backend)
   command -v "$b" >/dev/null 2>&1 \
-    || die "$b 가 없다 (--channel 로 시각 채널을 쓰려면 필요하다)"
+    || die "$b not found (needed for the visual channel)"
   case $PLATFORM in
     macos)
       # Pass the text through argv instead of splicing it into an AppleScript
@@ -146,7 +146,7 @@ maybe_banner() {
 }
 
 # Suffix for the status line when a banner was shown too.
-chan_note() { [[ $CHANNEL == sound ]] || printf ' +배너'; }
+chan_note() { [[ $CHANNEL == sound ]] || printf ' +banner'; }
 
 # ── Language detection ──────────────────────────────────────────────────────
 # Read UTF-8 bytes, not regex ranges like [가-힣]: with LC_CTYPE=C (cron,
@@ -290,10 +290,10 @@ resolve_voice() {
     # No voice for the language: fall back rather than fail. A notification in
     # the wrong accent beats no notification (docs/cli.md).
     v=$(best_voice "$lang") || v=$(best_voice en) || v=$(voice_table | cut -f1 | head -1)
-    [[ -z ${v// } ]] && die "보이스를 하나도 못 찾았다 (nautice list voices)"
+    [[ -z ${v// } ]] && die "no voices found (nautice list voices)"
     printf '%s' "$v"; return
   fi
-  voice_exists "$v" || die "그런 보이스가 없다: $v (nautice list voices)"
+  voice_exists "$v" || die "no such voice: $v (nautice list voices)"
   printf '%s' "$v"
 }
 
@@ -312,18 +312,18 @@ tts_render() {
     case $PLATFORM in
       macos)
         say -v "$voice" -r "$(wpm_for "$rate")" -o "$path.tmp" -- "$text" \
-          || die "say 실패 (보이스 '$voice')"
+          || die "say failed (voice '$voice')"
         mv -f "$path.tmp" "$path" ;;
       linux)
         if [[ -n $NAUTICE_PIPER_MODEL ]]; then
-          command -v piper >/dev/null 2>&1 || die "NAUTICE_PIPER_MODEL 이 있는데 piper 가 없다"
+          command -v piper >/dev/null 2>&1 || die "NAUTICE_PIPER_MODEL is set but piper is not installed"
           printf '%s' "$text" | piper -m "$NAUTICE_PIPER_MODEL" -f "$path.tmp" >/dev/null 2>&1 \
-            || die "piper 실패 (모델: $NAUTICE_PIPER_MODEL)"
+            || die "piper failed (model: $NAUTICE_PIPER_MODEL)"
         elif command -v espeak-ng >/dev/null 2>&1; then
           espeak-ng -v "$voice" -s "$(wpm_for "$rate")" -w "$path.tmp" -- "$text" \
-            || die "espeak-ng 실패 (보이스 '$voice')"
+            || die "espeak-ng failed (voice '$voice')"
         else
-          die "TTS 백엔드가 없다 (espeak-ng 를 설치하거나 NAUTICE_PIPER_MODEL 을 지정하라)"
+          die "no TTS backend (install espeak-ng or set NAUTICE_PIPER_MODEL)"
         fi
         mv -f "$path.tmp" "$path" ;;
     esac
@@ -341,7 +341,7 @@ sfx_resolve() {
   if [[ $PLATFORM == macos && -f "/System/Library/Sounds/$name.aiff" ]]; then
     printf '%s' "/System/Library/Sounds/$name.aiff"; return
   fi
-  die "그런 사운드가 없다: $name (nautice list sounds)"
+  die "no such sound: $name (nautice list sounds)"
 }
 
 # ── Queue ───────────────────────────────────────────────────────────────────
@@ -407,7 +407,7 @@ print_plan() {
 read_text() {
   local text=$*
   [[ -z $text && ! -t 0 ]] && text=$(cat)
-  [[ -z ${text// } ]] && die "말할 내용이 없다"
+  [[ -z ${text// } ]] && die "nothing to say"
   printf '%s' "$text"
 }
 
@@ -420,7 +420,7 @@ cmd_say() {
     print_plan say "$voice" '' "$text"; return 0
   fi
   maybe_banner "$text"
-  if [[ $CHANNEL == visual ]]; then say_status "say 배너만"; return 0; fi
+  if [[ $CHANNEL == visual ]]; then say_status "say banner only"; return 0; fi
   voice=$(resolve_voice "$(resolve_lang "$text")")
   speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
   say_status "say x$OPT_REPEAT [$voice]$(chan_note)"
@@ -429,9 +429,9 @@ cmd_say() {
 
 cmd_play() {
   local file
-  [[ $# -gt 0 && -n ${1:-} ]] || die "사운드 이름이나 경로가 필요하다 (nautice list sounds)"
+  [[ $# -gt 0 && -n ${1:-} ]] || die "need a sound name or path (nautice list sounds)"
   # A sound has no text to put in a banner.
-  [[ $CHANNEL == sound ]] || die "play 는 문구가 없어 시각 채널을 못 쓴다 (--channel sound)"
+  [[ $CHANNEL == sound ]] || die "play has no text for a banner (use --channel sound)"
   file=$(sfx_resolve "$1")
   [[ $OPT_PLAN == 1 ]] && { print_plan play '' "$1" ''; return 0; }
   say_status "play x$OPT_REPEAT [$1]"
@@ -447,7 +447,7 @@ cmd_alert() {
     print_plan "$CMD_NAME" "$voice" "${OPT_TONE:-ask}" "$text"; return 0
   fi
   maybe_banner "$text"
-  if [[ $CHANNEL == visual ]]; then say_status "$CMD_NAME 배너만"; return 0; fi
+  if [[ $CHANNEL == visual ]]; then say_status "$CMD_NAME banner only"; return 0; fi
   voice=$(resolve_voice "$(resolve_lang "$text")")
   speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
   chime=$(sfx_resolve "${OPT_TONE:-ask}")
@@ -470,10 +470,10 @@ cmd_list() {
   sounds=$(find_sounds)
   case $what in
     sounds)
-      echo "번들 (세 OS 공통):"
+      echo "Bundled (all OSes):"
       for f in "$sounds"/*.wav; do printf '  %s\n' "$(basename "$f" .wav)"; done
       if [[ $PLATFORM == macos ]]; then
-        echo; echo "macOS 시스템 사운드:"
+        echo; echo "macOS system sounds:"
         for f in /System/Library/Sounds/*.aiff; do printf '  %s\n' "$(basename "$f" .aiff)"; done
       fi ;;
     voices)
@@ -482,7 +482,7 @@ cmd_list() {
         voice_list "$lang" | sed 's/^/  /'
       done ;;
     all) cmd_list sounds; echo; cmd_list voices ;;
-    *) die "list 대상: voices | sounds | all" ;;
+    *) die "list what: voices | sounds | all" ;;
   esac
 }
 
@@ -493,50 +493,50 @@ cmd_doctor() {
   if [[ $PLATFORM == macos ]]; then
     for t in say afplay; do
       if command -v "$t" >/dev/null; then printf '  %-12s %s\n' "$t" "$(command -v "$t")"
-      else printf '  %-12s 없음 (필수)\n' "$t"; ok=1; fi
+      else printf '  %-12s missing (required)\n' "$t"; ok=1; fi
     done
   else
     if [[ -n $NAUTICE_PIPER_MODEL ]]; then
       printf '  %-12s %s\n' TTS "piper ($NAUTICE_PIPER_MODEL)"
-      command -v piper >/dev/null || { printf '  %-12s piper 가 PATH 에 없다\n' ''; ok=1; }
+      command -v piper >/dev/null || { printf '  %-12s piper is not on PATH\n' ''; ok=1; }
     elif command -v espeak-ng >/dev/null; then
-      printf '  %-12s espeak-ng — 포먼트 합성이라 한국어가 거칠다\n' TTS
+      printf '  %-12s espeak-ng (formant synthesis; rough for some languages)\n' TTS
     else
-      printf '  %-12s 없음 (espeak-ng 또는 NAUTICE_PIPER_MODEL 필요)\n' TTS; ok=1
+      printf '  %-12s missing (need espeak-ng or NAUTICE_PIPER_MODEL)\n' TTS; ok=1
     fi
     if p=$(linux_player); then
-      printf '  %s %s' '재생기      ' "$p"
-      [[ $p == aplay ]] && printf ' — 볼륨을 못 받는다. --vol 이 무시된다'
+      printf '  %-12s %s' player "$p"
+      [[ $p == aplay ]] && printf ' (no volume control; --vol is ignored)'
       printf '\n'
     else
-      printf '  %s 없음 (pw-play/paplay/aplay/ffplay/mpv)\n' '재생기      '; ok=1
+      printf '  %-12s missing (pw-play, paplay, aplay, ffplay or mpv)\n' player; ok=1
     fi
   fi
 
   local h=''
   for t in shasum sha1sum md5sum; do command -v "$t" >/dev/null && { h=$t; break; }; done
-  if [[ -n $h ]]; then printf '  %s %s\n' '해시        ' "$(command -v "$h")"
-  else printf '  %s 없음 (shasum / sha1sum / md5sum 중 하나가 필요하다)\n' '해시        '; ok=1; fi
+  if [[ -n $h ]]; then printf '  %-12s %s\n' hash "$(command -v "$h")"
+  else printf '  %-12s missing (need shasum, sha1sum or md5sum)\n' hash; ok=1; fi
 
   if command -v flock >/dev/null; then printf '  %-12s %s\n' flock "$(command -v flock)"
-  else printf '  %-12s 없음 — mkdir 락으로 대체\n' flock; fi
+  else printf '  %-12s missing (using a mkdir lock)\n' flock; fi
 
   # The visual channel is optional: a missing backend is reported, not failed.
   local vb; vb=$(visual_backend)
-  if command -v "$vb" >/dev/null; then printf '  %s %s\n' '배너        ' "$(command -v "$vb")"
-  else printf '  %s 없음 (%s) — --channel visual 을 못 쓴다\n' '배너        ' "$vb"; fi
+  if command -v "$vb" >/dev/null; then printf '  %-12s %s\n' banner "$(command -v "$vb")"
+  else printf '  %-12s missing %s (no visual channel)\n' banner "$vb"; fi
 
-  printf '  %s %s\n' '효과음      ' "$(find_sounds)"
-  printf '  %s %s' '캐시        ' "$NAUTICE_CACHE"
+  printf '  %-12s %s\n' sounds "$(find_sounds)"
+  printf '  %-12s %s' cache "$NAUTICE_CACHE"
   if [[ -d $NAUTICE_CACHE ]]; then
-    printf ' (%s개, %s)\n' \
+    printf ' (%s files, %s)\n' \
       "$(find "$NAUTICE_CACHE" \( -name '*.aiff' -o -name '*.wav' \) | wc -l | tr -d ' ')" \
       "$(du -sh "$NAUTICE_CACHE" 2>/dev/null | cut -f1)"
-  else printf ' (아직 없음)\n'; fi
+  else printf ' (not created yet)\n'; fi
   # Same %.3f format as --plan; with %s, 1.0 prints as "1.0" here but "1" on Windows.
-  printf '  %s vol=%.3f rate=%.3f\n' '기본값      ' "$NAUTICE_VOL" "$NAUTICE_RATE"
+  printf '  %-12s vol=%.3f rate=%.3f\n' defaults "$NAUTICE_VOL" "$NAUTICE_RATE"
   # Languages with a voice. Others fall back silently under -q, so say it here.
-  printf '  %s %s\n' '보이스 언어 ' "$(voice_table | cut -f2 | sort -u | tr '\n' ' ')"
+  printf '  %-12s %s\n' languages "$(voice_table | cut -f2 | sort -u | tr '\n' ' ')"
 
   if [[ $PLATFORM == macos ]]; then
     # Built-in compact/eloquence voices are low quality. Premium/Enhanced ones
@@ -544,59 +544,59 @@ cmd_doctor() {
     local hi; hi=$(voice_table \
       | awk -F'\t' '$1 ~ /\((Premium|Enhanced)\)$/ { n[$2]++ } END { for (l in n) print l " " n[l] }' \
       | sort | paste -sd, - | sed 's/,/, /g')
-    if [[ -n $hi ]]; then printf '  %s %s\n' '고품질      ' "$hi"
-    else printf '  %s 없음 — 시스템 설정 > 손쉬운 사용 > 음성 콘텐츠 > 음성 관리\n' '고품질      '; fi
+    if [[ -n $hi ]]; then printf '  %-12s %s\n' quality "$hi"
+    else printf '  %-12s none (System Settings > Accessibility > Spoken Content > Manage Voices)\n' quality; fi
   fi
   return $ok
 }
 
 cmd_cache() {
   case "${1:-info}" in
-    clear) rm -rf "$NAUTICE_CACHE"; echo "캐시를 비웠다: $NAUTICE_CACHE (보이스 재해석 포함)" ;;
+    clear) rm -rf "$NAUTICE_CACHE"; echo "cache cleared: $NAUTICE_CACHE (voice choices too)" ;;
     info)  if [[ -d $NAUTICE_CACHE ]]; then
-             printf '%s  %s개  %s\n' "$NAUTICE_CACHE" \
+             printf '%s  %s files  %s\n' "$NAUTICE_CACHE" \
                "$(find "$NAUTICE_CACHE" \( -name '*.aiff' -o -name '*.wav' \) | wc -l | tr -d ' ')" \
                "$(du -sh "$NAUTICE_CACHE" 2>/dev/null | cut -f1)"
-           else echo "캐시 없음: $NAUTICE_CACHE"; fi ;;
-    *) die "cache 대상: info | clear" ;;
+           else echo "no cache: $NAUTICE_CACHE"; fi ;;
+    *) die "cache what: info | clear" ;;
   esac
 }
 
 usage() {
   cat <<'USAGE'
-nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
+nautice — a notification CLI that lets an agent get a human's attention
 
-사용법
-  nautice say   [옵션] <문구>       읽는다 (생략시 stdin)
-  nautice play  [옵션] <이름|경로>  효과음을 낸다
-  nautice alert [옵션] <문구>       효과음 뒤에 읽는다
-  nautice call  [옵션] [문구]       사람을 부른다 (alert + 기본문구, 2회)
-  nautice list  [voices|sounds]     목록
-  nautice doctor                    환경 점검
-  nautice cache [info|clear]        렌더 캐시
+Usage
+  nautice say   [options] <text>        speak (stdin if omitted)
+  nautice play  [options] <name|path>   play a sound
+  nautice alert [options] <text>        play a sound, then speak
+  nautice call  [options] [text]        call the human (alert + default text, twice)
+  nautice list  [voices|sounds]         list voices or sounds
+  nautice doctor                        check the environment
+  nautice cache [info|clear]            render cache
 
-옵션
-  -v, --voice NAME   보이스 (auto | best | 이름)
-  -V, --vol N        0.0 ~ 1.0            (기본 0.6)
-  -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
-  -t, --tone NAME    alert/call 의 효과음  (기본 ask)
-  -c, --channel NAME sound | visual | both (기본 sound)
-  -l, --lang CODE    두 글자 언어 코드     (기본 auto — 문구에서 가린다)
-      --hold         배너를 지울 때까지 띄워 둔다 (시각 채널에만)
-  -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
-  -g, --gap SEC      반복 사이 간격        (기본 0.4)
-  -a, --async        기다리지 않고 반환 (훅에서 필수)
-  -q, --quiet        상태 줄을 찍지 않는다
+Options
+  -v, --voice NAME    voice (auto | best | name)
+  -V, --vol N         0.0 to 1.0                (default 0.6)
+  -r, --rate N        speed multiplier, 1.0 = normal (default 1.0)
+  -t, --tone NAME     sound for alert/call      (default ask)
+  -c, --channel NAME  sound | visual | both     (default sound)
+  -l, --lang CODE     two-letter language code  (default auto: from the text)
+      --hold          keep the banner until dismissed (visual channel only)
+  -n, --repeat N      integer 1 to 20           (default 1, call 2)
+  -g, --gap SEC       pause between repetitions (default 0.4)
+  -a, --async         return without waiting (required in hooks)
+  -q, --quiet         no status line
 
-효과음 이름표: ok error warn ask start notify
+Sounds: ok error warn ask start notify
 
-예시
+Examples
   nautice call
-  nautice say "빌드가 끝났습니다"
-  nautice alert -t warn -n 3 "디스크가 찼습니다"
+  nautice say "Build finished"
+  nautice alert -t warn -n 3 "Disk is full"
   nautice play -V 0.3 ok
-  nautice call -c both              # 소리 + 알림 배너
-  echo "파이프도 된다" | nautice say
+  nautice call -c both                  # sound + notification banner
+  echo "pipes work too" | nautice say
 USAGE
 }
 
@@ -617,21 +617,21 @@ in_range() { awk -v v="$1" -v lo="$2" -v hi="$3" 'BEGIN { exit !(v >= lo && v <=
 
 check_num() {
   local label=$1 v=$2 lo=$3 hi=$4
-  is_num "$v" || die "$label 은 숫자다: $v"
-  in_range "$v" "$lo" "$hi" || die "$label 은 $lo ~ $hi 이다: $v"
+  is_num "$v" || die "$label must be a number: $v"
+  in_range "$v" "$lo" "$hi" || die "$label must be between $lo and $hi: $v"
 }
 
 # --repeat must be an integer. A decimal would crash for (( )) here and be
 # rounded by [int] on Windows — the same command breaking differently per OS.
 check_int() {
   local label=$1 v=$2 lo=$3 hi=$4
-  is_int "$v" || die "$label 은 정수다: $v"
-  in_range "$v" "$lo" "$hi" || die "$label 은 $lo ~ $hi 이다: $v"
+  is_int "$v" || die "$label must be an integer: $v"
+  in_range "$v" "$lo" "$hi" || die "$label must be between $lo and $hi: $v"
 }
 
 # Under set -u a missing option value dies as "unbound variable" at $2 — right
 # exit code, but a bash internal error. Check first and fail with our message.
-need_val() { (($# >= 2)) || die "$1 에 값이 없다"; }
+need_val() { (($# >= 2)) || die "$1 needs a value"; }
 
 while (($#)); do
   case $1 in
@@ -650,7 +650,7 @@ while (($#)); do
     -h|--help)   usage; exit 0 ;;
     --version)   echo "nautice $VERSION"; exit 0 ;;
     --)          shift; ARGS+=("$@"); break ;;
-    -*)          die "모르는 옵션: $1" ;;
+    -*)          die "unknown option: $1" ;;
     *)           ARGS+=("$1"); shift ;;
   esac
 done
@@ -663,12 +663,12 @@ check_num --gap    "$OPT_GAP"    0 10
 
 LANG_REQ=${OPT_LANG:-$NAUTICE_LANG}
 [[ $LANG_REQ == auto || $LANG_REQ =~ ^[a-z]{2}$ ]] \
-  || die "--lang 은 auto 이거나 두 글자 언어 코드다: $LANG_REQ"
+  || die "--lang must be auto or a two-letter language code: $LANG_REQ"
 
 CHANNEL=${OPT_CHANNEL:-$NAUTICE_CHANNEL}
 case $CHANNEL in
   sound|visual|both) ;;
-  *) die "--channel 은 sound | visual | both 다: $CHANNEL" ;;
+  *) die "--channel must be sound, visual or both: $CHANNEL" ;;
 esac
 
 # Hooks must not block the agent. Arguments are validated before detaching, so
@@ -695,5 +695,5 @@ case $cmd in
     "cmd_$cmd" "$@" ;;
   list|doctor|cache) "cmd_$cmd" "$@" ;;
   ""|help) usage ;;
-  *) die "모르는 명령: $cmd (nautice --help)" ;;
+  *) die "unknown command: $cmd (nautice --help)" ;;
 esac

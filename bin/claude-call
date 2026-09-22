@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Git Bash 등 POSIX 셸용 셈. 실제 로직은 claude-call.ps1 에 있다.
-set -e
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -W)"
-exec powershell -NoProfile -ExecutionPolicy Bypass -File "$here/claude-call.ps1" "$@"

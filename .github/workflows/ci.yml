@@ -1,0 +1,55 @@
+# 적합성 테스트는 두 구현을 맞대는 것이라 pwsh 가 있어야 절반이 아니라 전부 돈다.
+# GitHub 러너는 세 OS 다 pwsh 를 갖고 있다. 실기가 없는 OS 까지 여기서 본다.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  conformance:
+    name: 적합성 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # pwsh 가 없으면 비교를 건너뛰고 조용히 통과한다. CI 에서 그러면 안 되므로
+      # nix 로 빌려 오는 길을 막고, 아래 단계에서 없으면 그 자리에서 실패시킨다.
+      NAUTICE_TEST_NIX_PWSH: 0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pwsh 가 있는지 확인한다
+        shell: bash
+        run: command -v pwsh || command -v powershell
+
+      # 러너에 TTS 백엔드가 없으면 doctor 가 "없음" 을 찍는다. 그 줄까지 실제
+      # 백엔드를 보고 나오게 한다.
+      - name: espeak-ng 를 깐다
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y espeak-ng
+
+      - name: 적합성 테스트
+        shell: bash
+        run: ./test/conformance
+
+      # Windows 에서 bin/nautice 는 ps1 로 넘기므로 적합성 테스트가 비교할 상대가
+      # 없다. 대신 여기가 System.Speech 가 실제로 불리는 유일한 자리다 —
+      # nautice.cmd 가 부르는 것과 같은 PowerShell 5.1 로 본다.
+      - name: Windows 실기 점검
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          .\bin\nautice.ps1 doctor
+          .\bin\nautice.ps1 list voices
+
+  nix:
+    name: nix build (shellcheck 포함)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+      - run: nix build .#nautice -L

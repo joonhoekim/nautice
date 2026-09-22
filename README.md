@@ -1,5 +1,7 @@
 # nautice
 
+[![ci](https://github.com/joonhoekim/nautice/actions/workflows/ci.yml/badge.svg)](https://github.com/joonhoekim/nautice/actions/workflows/ci.yml)
+
 에이전트가 사람의 주의를 끄는 알림 CLI. **Windows · Linux · macOS.**
 
 ```

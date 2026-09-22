@@ -28,7 +28,10 @@ OS 백엔드의 한계 때문에 정말 갈라져야 하는 것은 `docs/cli.md`
 nix build .#nautice    # shellcheck 까지 돈다
 ```
 
-실기가 없는 OS 도 여기까지는 확인할 수 있다.
+`.github/workflows/ci.yml` 이 이 둘을 세 OS 러너에서 돌린다. Windows 실기에서
+`System.Speech` 가 실제로 불리는 자리는 거기뿐이다.
+
+실기가 없는 OS 도 손에서 여기까지는 확인할 수 있다.
 
 ```sh
 # Windows 구현을 macOS·Linux 에서 (System.Speech 는 안 되지만 나머지는 된다)

@@ -242,6 +242,20 @@ if (( have_ps )); then
 fi
 echo
 
+# ── 계약의 효과음 이름표가 번들에 있는가 ────────────────────────────────────
+# docs/cli.md 에 이름표만 더하고 tools/gen-sounds.py 를 안 돌리면 그 이름표는
+# "그런 사운드가 없다" 로 죽는다. 반대로 파일만 늘면 아무도 그 소리를 못 찾는다.
+echo "계약의 이름표와 번들 파일이 맞는가"
+# shellcheck disable=SC2016  # 찾는 게 마크다운의 백틱 자체다
+doc_tones=$(grep -F 'share/sounds/<이름>.wav' docs/cli.md | grep -oE '`[a-z]+`' | tr -d '`' | sort)
+wav_tones=$(find share/sounds -name '*.wav' -exec basename {} .wav \; | sort)
+if [[ $doc_tones == "$wav_tones" && -n $doc_tones ]]; then
+  ok "$(printf '%s' "$doc_tones" | tr '\n' ' ')"
+else
+  bad '이름표' "$(diff <(printf '%s\n' "$doc_tones") <(printf '%s\n' "$wav_tones") | head -8)"
+fi
+echo
+
 # ── 계약이 구현의 환경변수를 다 적고 있는가 ─────────────────────────────────
 # 한쪽에만 적힌 변수는 아무도 못 찾는다. 파일만 읽으므로 구현이 하나뿐인
 # 기계에서도 돈다.

@@ -469,7 +469,9 @@ cmd_doctor() {
       "$(find "$NAUTICE_CACHE" \( -name '*.aiff' -o -name '*.wav' \) | wc -l | tr -d ' ')" \
       "$(du -sh "$NAUTICE_CACHE" 2>/dev/null | cut -f1)"
   else printf ' (아직 없음)\n'; fi
-  printf '  %s vol=%s rate=%s\n' '기본값      ' "$NAUTICE_VOL" "$NAUTICE_RATE"
+  # --plan 과 같은 서식으로 찍는다. %s 로 그냥 흘리면 NAUTICE_RATE=1.0 이 한쪽은
+  # "1.0", 다른 쪽은 "1" 로 나와 같은 기본값이 달라 보인다.
+  printf '  %s vol=%.3f rate=%.3f\n' '기본값      ' "$NAUTICE_VOL" "$NAUTICE_RATE"
 
   if [[ $PLATFORM == macos ]]; then
     printf '  %s ko=%s  en=%s\n' '해석 보이스 ' "$(best_voice ko Yuna)" "$(best_voice en Samantha)"

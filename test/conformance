@@ -214,6 +214,17 @@ if (( have_ps )); then
   if [[ $got =~ $doctor_head ]]; then ok "ps doctor 머리글"
   else bad "ps doctor 머리글" "'$got'"; fi
 fi
+# 기본값 줄은 같은 숫자를 같은 서식으로 찍어야 한다. 이름표의 폭은 한글 너비
+# 때문에 OS 마다 달라지므로 숫자 부분만 본다.
+defaults_of() { sed -n 's/^.*\(vol=[0-9.]* rate=[0-9.]*\).*$/\1/p'; }
+if (( have_bash && have_ps )); then
+  a=$(run_bash doctor | defaults_of)
+  b=$(run_ps   doctor | defaults_of)
+  if [[ $a == "$b" && -n $a ]]; then ok "doctor 기본값 ($a)"
+  else bad "doctor 기본값" "bash '$a' / ps '$b'"; fi
+else
+  printf '  \033[33mskip\033[0m %s (%s)\n' "doctor 기본값" "$SKIP_WHY"
+fi
 # 번들 효과음의 이름표는 세 OS 가 같아야 한다 — 알림의 뜻이 기계마다 흔들리면
 # 안 되기 때문이다. 그 뒤에 붙는 OS 기본 사운드는 기계마다 다르니 뺀다.
 bundled() { sed -n '/^번들/,/^$/p' | sed -n 's/^  //p' | sort; }

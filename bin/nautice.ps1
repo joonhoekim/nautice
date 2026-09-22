@@ -395,7 +395,9 @@ function Invoke-Doctor([hashtable] $o) {
     Write-Output ("  {0,-11} System.Windows.Forms.NotifyIcon — 데스크톱 세션이 있어야 뜬다" -f '배너')
     Write-Output ("  {0,-11} {1}" -f '효과음', (Get-SoundsDir))
     Write-Output ("  {0,-11} 쓰지 않는다 (SAPI 가 볼륨·속도를 직접 받는다)" -f '캐시')
-    Write-Output ("  {0,-11} vol={1} rate={2}" -f '기본값', $Defaults.Vol, $Defaults.Rate)
+    # --plan 과 같은 서식으로 찍는다. 그냥 흘리면 [double]1.0 이 "1" 로 나와
+    # bash 쪽의 "1.0" 과 달라 보인다.
+    Write-Output ("  {0,-11} vol={1:F3} rate={2:F3}" -f '기본값', $Defaults.Vol, $Defaults.Rate)
     exit $ok
 }
 

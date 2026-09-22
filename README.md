@@ -34,22 +34,36 @@ nautice say -c visual "빌드 끝"       # 배너만
 
 ## 설치
 
-**macOS · Linux** — nix
+**macOS · Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | bash
+```
+
+**Windows**
+
+```powershell
+irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+```
+
+`~/.local` (Windows 는 `%LOCALAPPDATA%\Programs\nautice`) 에 넣고 **무엇이
+없는지 `nautice doctor` 로 알려준 뒤 끝난다.** 런타임 의존성을 깔지 않고,
+에이전트 설정도 건드리지 않는다. 설치 위치·버전·지우기는
+[`docs/install.md`](docs/install.md).
+
+Git Bash 에서 `nautice` 를 부르면 `nautice.ps1` 로 넘어간다 — 이름 하나로 쓴다.
+
+<details>
+<summary>nix</summary>
 
 ```sh
 nix run github:joonhoekim/nautice -- call
+nix run github:joonhoekim/nautice/v0.4.0 -- call   # 태그를 박아서
 nix profile install github:joonhoekim/nautice
-./bin/nautice doctor          # 레포에서 바로
+./bin/nautice doctor                               # 레포에서 바로
 ```
 
-**Windows** — `bin/` 을 PATH 에 있는 디렉터리로 복사하면 끝이다. 런타임이 없다.
-
-```powershell
-Copy-Item .\bin\* "$env:USERPROFILE\.local\bin\"
-.\bin\nautice.ps1 doctor
-```
-
-Git Bash 에서 `nautice` 를 부르면 `nautice.ps1` 로 넘어간다 — 이름 하나로 쓴다.
+</details>
 
 ## 플랫폼별 준비물
 
@@ -77,9 +91,14 @@ Git Bash 에서 `nautice` 를 부르면 `nautice.ps1` 로 넘어간다 — 이�
 `NAUTICE_PIPER_MODEL` 로 지정하면 그쪽을 먼저 쓴다. 그 전까지 Linux 에서는
 효과음 채널(`nautice play`)이 훨씬 믿을 만하다.
 
-## Claude Code 훅
+## 에이전트에 물리기
 
-`~/.claude/settings.json`. 에이전트를 막지 않도록 **반드시 `-a`** 를 붙인다.
+**인스톨러는 당신의 설정을 건드리지 않는다.** 사람마다 원하는 방식이 다르고,
+인스톨러가 써 넣은 설정은 낡아도 아무도 고치지 않는다. 아래에서 원하는 쪽을
+직접 붙인다. 자세한 것은 [`docs/claude-code-config.md`](docs/claude-code-config.md).
+
+**(1) 훅 — 무조건 울린다.** `~/.claude/settings.json`. 에이전트를 막지 않도록
+**반드시 `-a`** 를 붙인다.
 
 ```json
 {
@@ -94,7 +113,21 @@ Git Bash 에서 `nautice` 를 부르면 `nautice.ps1` 로 넘어간다 — 이�
 }
 ```
 
-Windows 에서는 `command` 를 `nautice.cmd call -a -q` 로 적는다.
+Windows 에서는 `command` 를 `nautice.cmd call -a -q` 로 적는다. 자리를 비울 때가
+많으면 `-c both --hold` 를 붙인다 — 배너가 지울 때까지 남는다.
+
+**(2) 에이전트가 판단해서 부른다.** 훅을 걸지 말고 `CLAUDE.md` 에 도구의 존재만
+알린다. 그대로 붙여 넣으면 된다.
+
+```markdown
+## 사용 가능한 도구
+
+- `nautice` — 사람을 소리로 부르는 알림 CLI. `nautice call -a -q` 로 부른다.
+  자동으로 울리지는 않는다 — 오래 걸리는 작업이 끝났거나 사람의 판단이
+  필요할 때만 쓴다. 배너까지 띄우려면 `-c both`, 지울 때까지 남기려면 `--hold`.
+```
+
+"자동으로 울리지 않는다" 를 적어야 아무 때나 소리를 내지 않는다.
 
 ## 구조
 
@@ -104,7 +137,11 @@ bin/nautice.ps1    ps1    Windows — UTF-8 BOM 이어야 한글이 안 깨진�
 bin/nautice.cmd           cmd 용 런처
 share/sounds/             세 OS 공통 효과음
 tools/gen-sounds.py       그 효과음을 만드는 스크립트 (표준 라이브러리만)
+install.sh                macOS · Linux 인스톨러
+install.ps1               Windows 인스톨러
+tools/mkdist              릴리스 자산을 만든다 (표준 라이브러리만)
 docs/cli.md               동작 계약 — 단일 출처
+docs/install.md           설치 계약 — 단일 출처
 test/conformance          두 구현이 계약을 똑같이 지키는지 본다
 ```
 

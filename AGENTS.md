@@ -2,7 +2,7 @@
 
 이 저장소에서 코드를 고칠 때 지키는 규칙.
 
-## 구현이 둘이다
+## 구현이 둘이다 (두 쌍이다)
 
 `bin/nautice`(bash, macOS·Linux)와 `bin/nautice.ps1`(Windows)은 **같은 동작을
 서로 다른 언어로 쓴 것**이다. 한쪽만 고치면 두 OS 의 동작이 갈라지고, 그걸
@@ -21,12 +21,21 @@
 OS 백엔드의 한계 때문에 정말 갈라져야 하는 것은 `docs/cli.md` 의 "플랫폼 차이"
 에 적는다. 거기 적히지 않은 차이는 버그다.
 
+**인스톨러도 같은 쌍이다.** `install.sh` 와 `install.ps1` 은 `docs/install.md` 를
+단일 출처로 하는 두 번째 이중 구현이다. 여기서 갈라짐을 막는 방법은 하나다 —
+**인스톨러를 멍청하게 두는 것.** 받기 → 검증 → 풀기 → 복사 → `doctor` 가 전부고
+판단을 넣지 않는다. 판단이 늘수록 두 구현이 갈라진다. 끝까지 도는지는
+`ci.yml` 의 `설치` 잡이 세 OS 에서 본다.
+
 ## 검증
 
 ```sh
 ./test/conformance            # 두 구현 비교. pwsh 가 없으면 bash 쪽만 본다
 /bin/bash ./test/conformance  # macOS 의 bash 3.2 로 한 번 더
 nix build .#nautice           # shellcheck 까지 돈다
+
+python3 tools/mkdist          # 릴리스 자산을 dist/ 에 만든다
+NAUTICE_PREFIX=/tmp/p NAUTICE_ARCHIVE=dist/nautice-unix.tar.gz bash install.sh
 ```
 
 `.github/workflows/ci.yml` 이 이 둘을 세 OS 러너에서 돌린다. Windows 실기에서
@@ -49,6 +58,12 @@ docker run --rm -v "$PWD:/w:ro" -w /w debian:stable-slim bash -c \
 
 ## 손대면 깨지는 것
 
+- **인스톨러는 아무것도 물을 수 없다.** `curl | bash` 와 `irm | iex` 는 stdin 이
+  파이프라 `read` 가 스크립트 자신의 남은 본문을 읽어 먹는다. 고를 것은 전부
+  환경변수로 받는다.
+- **설치는 개별 파일이 아니라 아카이브로 받는다.** 파일을 하나씩 받아 쓰면
+  아래의 BOM·CRLF 를 보존할 책임이 인스톨러로 넘어오고, PowerShell 의 `irm` 은
+  응답을 문자열로 디코드하며 BOM 을 떼어낸다. `.wav` 도 같이 상한다.
 - **`bin/nautice.ps1` 은 UTF-8 BOM 이어야 한다.** 없으면 PowerShell 5.1 이 시스템
   코드페이지로 읽어 한글 문구가 깨진다. 편집기가 BOM 을 떼지 않는지 확인한다.
   `.gitattributes` 가 `*.ps1` 을 CRLF 로 고정하는 것도 같은 이유다.

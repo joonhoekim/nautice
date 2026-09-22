@@ -154,11 +154,6 @@ function ConvertTo-SapiVolume([double] $vol) {
 # 가나가 있으면 한자가 같이 있어도 일본어다. .NET 정규식의 범위는 UTF-16 코드
 # 단위를 그대로 비교하므로 문화권을 타지 않는다.
 $ScriptLangs = @(
-    @{ Lang = 'ko'; Re = '[\u00ac00-\u00d7a3]' }
-)
-# 위 해시테이블은 아래에서 실제 범위로 다시 만든다 (PowerShell 5.1 의 \u 는
-# 문자열 이스케이프가 아니라 정규식 쪽 문법이라 한 줄로 적으면 헷갈린다).
-$ScriptLangs = @(
     @{ Lang = 'ko'; Re = '[\uAC00-\uD7A3]' }   # 한글 음절
     @{ Lang = 'ja'; Re = '[\u3040-\u30FF]' }   # 가나
     @{ Lang = 'zh'; Re = '[\u4E00-\u9FFF]' }   # 한자

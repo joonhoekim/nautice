@@ -51,15 +51,20 @@ echo
 
 # ── 계획 비교 ───────────────────────────────────────────────────────────────
 echo "계획 (OS 무관 필드가 같은가)"
+# --plan 은 케이스 인자보다 **앞**에 둔다. 뒤에 붙이면 `--` 를 쓰는 케이스에서
+# 문구로 먹혀(계약대로다) 소리가 실제로 나고, 양쪽 다 계획을 안 찍어 빈 문자열
+# 끼리 비교하느라 공허하게 통과한다.
 plan_case() {
   local name=$1; shift
   if (( have_bash == 0 || have_ps == 0 )); then
     printf '  \033[33mskip\033[0m %s (%s)\n' "$name" "$SKIP_WHY"; return
   fi
   local a b
-  a=$(run_bash "$@" --plan | grep -E "$SHARED_FIELDS" | sort)
-  b=$(run_ps   "$@" --plan | grep -E "$SHARED_FIELDS" | sort)
-  if [[ $a == "$b" ]]; then ok "$name"
+  a=$(run_bash --plan "$@" | grep -E "$SHARED_FIELDS" | sort)
+  b=$(run_ps   --plan "$@" | grep -E "$SHARED_FIELDS" | sort)
+  if [[ -z $a || -z $b ]]; then
+    bad "$name" "계획이 안 나왔다 (bash ${#a}자, ps ${#b}자)"
+  elif [[ $a == "$b" ]]; then ok "$name"
   else bad "$name" "$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | head -8)"; fi
 }
 
@@ -100,9 +105,11 @@ stdin_case() {
     printf '  \033[33mskip\033[0m %s (%s)\n' "$name" "$SKIP_WHY"; return
   fi
   local a b
-  a=$(printf '%s' "$text" | run_bash "$@" --plan | grep -E "$SHARED_FIELDS" | sort)
-  b=$(printf '%s' "$text" | run_ps   "$@" --plan | grep -E "$SHARED_FIELDS" | sort)
-  if [[ $a == "$b" ]]; then ok "$name"
+  a=$(printf '%s' "$text" | run_bash --plan "$@" | grep -E "$SHARED_FIELDS" | sort)
+  b=$(printf '%s' "$text" | run_ps   --plan "$@" | grep -E "$SHARED_FIELDS" | sort)
+  if [[ -z $a || -z $b ]]; then
+    bad "$name" "계획이 안 나왔다 (bash ${#a}자, ps ${#b}자)"
+  elif [[ $a == "$b" ]]; then ok "$name"
   else bad "$name" "$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | head -8)"; fi
 }
 stdin_case 'stdin 한글'         '빌드가 끝났습니다' say

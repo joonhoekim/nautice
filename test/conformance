@@ -105,17 +105,23 @@ fi
 echo
 
 # ── 거부해야 하는 입력 ──────────────────────────────────────────────────────
-echo "잘못된 입력은 양쪽 다 1 로 죽는가"
+echo "잘못된 입력은 양쪽 다 1 로, 제 문구로 죽는가"
+# 종료코드만 보면 .NET 의 변환 예외 스택도 bash 의 unbound variable 도 통과한다 —
+# 실제로 그렇게 새어 나간 적이 있다. 사용자가 본 첫 줄이 우리 문구인지까지 본다.
 reject_case() {
   local name=$1; shift
-  local rc_a=0 rc_b=0
-  if (( have_bash )); then run_bash "$@" >/dev/null 2>&1; rc_a=$?; fi
-  if (( have_ps ));   then run_ps   "$@" >/dev/null 2>&1; rc_b=$?; fi
-  local bad_a=0 bad_b=0
-  (( have_bash && rc_a != 1 )) && bad_a=1
-  (( have_ps   && rc_b != 1 )) && bad_b=1
-  if (( bad_a || bad_b )); then bad "$name" "bash=$rc_a ps=$rc_b (둘 다 1 이어야 한다)"
-  else ok "$name"; fi
+  local why='' rc msg
+  if (( have_bash )); then
+    msg=$(run_bash "$@" | head -1); rc=${PIPESTATUS[0]}
+    (( rc == 1 ))            || why+="bash 종료코드 $rc; "
+    [[ $msg == nautice:* ]]  || why+="bash 문구 '${msg:-(없음)}'; "
+  fi
+  if (( have_ps )); then
+    msg=$(run_ps "$@" | head -1); rc=${PIPESTATUS[0]}
+    (( rc == 1 ))            || why+="ps 종료코드 $rc; "
+    [[ $msg == nautice:* ]]  || why+="ps 문구 '${msg:-(없음)}'; "
+  fi
+  if [[ -n $why ]]; then bad "$name" "$why"; else ok "$name"; fi
 }
 reject_case '모르는 옵션'   say --bogus x
 reject_case '모르는 명령'   bogus
@@ -124,6 +130,19 @@ reject_case '--repeat 범위' say -n 99 x
 reject_case '--gap 범위'    say -g 99 x
 reject_case '--rate 범위'   say -r 0 x
 reject_case 'play 인자없음' play
+# 값이 빠진 옵션과 숫자 아닌 값은 종료코드만 맞고 문구가 내부 오류였던 자리다.
+reject_case '값 빠진 -v'    say -v
+reject_case '값 빠진 -V'    say -V
+reject_case '값 빠진 -r'    say -r
+reject_case '값 빠진 -n'    say -n
+reject_case '값 빠진 -g'    say -g
+reject_case '값 빠진 -t'    say -t
+reject_case '--vol 문자'    say -V xyz x
+reject_case '--rate 문자'   say -r abc x
+reject_case '--repeat 문자' say -n q x
+# 소수점이 쉼표인 문화권에서 조용히 0 으로 통과하던 자리다.
+reject_case '--vol 쉼표'    say -V 0,4 x
+reject_case '--vol 꼬리'    say -V 0.4abc x
 echo
 
 # ── 도움말이 계약의 옵션을 다 적고 있는가 ───────────────────────────────────

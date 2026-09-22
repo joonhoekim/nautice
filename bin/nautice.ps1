@@ -10,6 +10,14 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# 출력이 파이프나 파일로 갈 때 PowerShell 은 이 인코딩으로 바이트를 쓴다. 기본값은
+# ANSI 코드페이지(이 기계는 1252)라 한글이 표시가 아니라 **바이트째** '?'(0x3f) 로
+# 바뀐다 — 훅 로그나 `--plan` 출력을 받아 보면 `text=??? ?????` 가 남는다. 콘솔로
+# 직접 나갈 때는 WriteConsoleW 를 타서 멀쩡하므로 눈으로는 안 보이는 고장이다.
+# 리다이렉트된 핸들에는 SetConsoleOutputCP 를 부르지 않아 부모 콘솔의 코드페이지는
+# 건드리지 않는다 (CP437 콘솔에서 실측).
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+
 $VERSION = '0.2.0'
 
 # 부를 때마다 두 번 반복하므로 짧아야 한다.
@@ -207,7 +215,13 @@ function Write-Status([hashtable] $o, [string] $line) {
 function Read-Text([hashtable] $o) {
     $text = ($o.Rest -join ' ').Trim()
     if (-not $text -and -not [Console]::IsInputRedirected) { Die '말할 내용이 없다' }
-    if (-not $text) { $text = ([Console]::In.ReadToEnd()).Trim() }
+    # [Console]::In 은 콘솔 입력 코드페이지로 디코드한다. CP437 콘솔에 UTF-8 을
+    # 흘리면 '한글' 이 6 글자 쓰레기가 되고, 그대로 합성돼 엉뚱한 소리가 난다.
+    # --plan 으로는 같은 코드페이지로 되쓰느라 왕복해서 멀쩡해 보인다.
+    if (-not $text) {
+        $reader = New-Object System.IO.StreamReader ([Console]::OpenStandardInput()), (New-Object System.Text.UTF8Encoding $false)
+        try { $text = ($reader.ReadToEnd()).Trim() } finally { $reader.Dispose() }
+    }
     if (-not $text) { Die '말할 내용이 없다' }
     return $text
 }

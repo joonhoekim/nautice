@@ -45,6 +45,17 @@ function Die($msg) { [Console]::Error.WriteLine("nautice: $msg"); exit 1 }
 # PowerShell 의 기본 파라미터 바인딩은 이름을 대소문자 구분 없이 맞추므로
 # -v(보이스) 와 -V(볼륨) 를 구분하지 못한다. docs/cli.md 의 계약을 그대로
 # 지키려면 $args 를 직접 훑어야 한다. -ceq 가 대소문자를 구분한다.
+$ValueOpts = @('-v', '--voice', '-V', '--vol', '-r', '--rate',
+               '-t', '--tone', '-n', '--repeat', '-g', '--gap')
+
+# [double] 캐스트를 그냥 쓰면 `-r abc` 가 .NET 의 변환 예외 스택을 사용자에게
+# 뱉는다. bash 쪽은 awk 가 범위를 재다 실패해 제 문구로 죽으므로 여기서 맞춘다.
+function ConvertTo-Num([string] $v, [string] $label) {
+    $d = 0.0
+    if (-not [double]::TryParse($v, [ref] $d)) { Die "$label 은 숫자다: $v" }
+    return $d
+}
+
 function Parse-Args([string[]] $argv) {
     $o = @{
         Voice = ''; Vol = $null; Rate = $null; Tone = ''
@@ -55,14 +66,18 @@ function Parse-Args([string[]] $argv) {
     $i = 0
     while ($i -lt $argv.Count) {
         $a = $argv[$i]
+        # switch 본문이 $argv[$i + 1] 을 먼저 읽으므로 값이 빠진 걸 여기서 걸러야
+        # 한다. 안 그러면 `nautice say -r` 이 .NET 의 IndexOutOfRange 스택을 그대로
+        # 사용자에게 뱉는다. -ccontains 가 -v 와 -V 를 구분한다.
+        if (($ValueOpts -ccontains $a) -and ($i + 1 -ge $argv.Count)) { Die "$a 에 값이 없다" }
         $needsValue = $true
         switch -CaseSensitive ($a) {
             { $_ -ceq '-v' -or $_ -ceq '--voice'  } { $o.Voice = $argv[$i + 1] }
-            { $_ -ceq '-V' -or $_ -ceq '--vol'    } { $o.Vol   = [double]$argv[$i + 1] }
-            { $_ -ceq '-r' -or $_ -ceq '--rate'   } { $o.Rate  = [double]$argv[$i + 1] }
+            { $_ -ceq '-V' -or $_ -ceq '--vol'    } { $o.Vol   = ConvertTo-Num $argv[$i + 1] '--vol' }
+            { $_ -ceq '-r' -or $_ -ceq '--rate'   } { $o.Rate  = ConvertTo-Num $argv[$i + 1] '--rate' }
             { $_ -ceq '-t' -or $_ -ceq '--tone'   } { $o.Tone  = $argv[$i + 1] }
-            { $_ -ceq '-n' -or $_ -ceq '--repeat' } { $o.Repeat = [int]$argv[$i + 1]; $o.RepeatGiven = $true }
-            { $_ -ceq '-g' -or $_ -ceq '--gap'    } { $o.Gap   = [double]$argv[$i + 1] }
+            { $_ -ceq '-n' -or $_ -ceq '--repeat' } { $o.Repeat = [int](ConvertTo-Num $argv[$i + 1] '--repeat'); $o.RepeatGiven = $true }
+            { $_ -ceq '-g' -or $_ -ceq '--gap'    } { $o.Gap   = ConvertTo-Num $argv[$i + 1] '--gap' }
             { $_ -ceq '-a' -or $_ -ceq '--async'  } { $o.Async = $true;  $needsValue = $false }
             { $_ -ceq '-q' -or $_ -ceq '--quiet'  } { $o.Quiet = $true;  $needsValue = $false }
             { $_ -ceq '--plan' }                     { $o.Plan  = $true;  $needsValue = $false }
@@ -74,12 +89,7 @@ function Parse-Args([string[]] $argv) {
                 $rest.Add($a); $needsValue = $false
             }
         }
-        if ($needsValue) {
-            if ($i + 1 -ge $argv.Count) { Die "$a 에 값이 없다" }
-            $i += 2
-        } else {
-            $i += 1
-        }
+        if ($needsValue) { $i += 2 } else { $i += 1 }
     }
     if ($rest.Count -gt 0) {
         $o.Command = $rest[0]

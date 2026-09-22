@@ -456,14 +456,18 @@ ARGS=()
 
 num_in_range() { awk -v v="$1" -v lo="$2" -v hi="$3" 'BEGIN { exit !(v >= lo && v <= hi) }' 2>/dev/null; }
 
+# set -u 라 값이 빠진 옵션은 $2 에서 "unbound variable" 로 죽는다. 종료코드는 1 로
+# 맞지만 사용자가 보는 건 bash 의 내부 오류다. 먼저 걸러서 제 문구로 죽는다.
+need_val() { (($# >= 2)) || die "$1 에 값이 없다"; }
+
 while (($#)); do
   case $1 in
-    -v|--voice)  OPT_VOICE=$2; shift 2 ;;
-    -V|--vol)    OPT_VOL=$2;   shift 2 ;;
-    -r|--rate)   OPT_RATE=$2;  shift 2 ;;
-    -t|--tone)   OPT_TONE=$2;  shift 2 ;;
-    -n|--repeat) OPT_REPEAT=$2; REPEAT_GIVEN=1; shift 2 ;;
-    -g|--gap)    OPT_GAP=$2;   shift 2 ;;
+    -v|--voice)  need_val "$@"; OPT_VOICE=$2; shift 2 ;;
+    -V|--vol)    need_val "$@"; OPT_VOL=$2;   shift 2 ;;
+    -r|--rate)   need_val "$@"; OPT_RATE=$2;  shift 2 ;;
+    -t|--tone)   need_val "$@"; OPT_TONE=$2;  shift 2 ;;
+    -n|--repeat) need_val "$@"; OPT_REPEAT=$2; REPEAT_GIVEN=1; shift 2 ;;
+    -g|--gap)    need_val "$@"; OPT_GAP=$2;   shift 2 ;;
     -a|--async)  OPT_ASYNC=1;  shift ;;
     -q|--quiet)  OPT_QUIET=1;  shift ;;
     --plan)      OPT_PLAN=1;   shift ;;

@@ -93,18 +93,18 @@ voice. Do not write "works" unless you heard what actually played.
 **One subject line, a body of at most three lines.** A longer body belongs in a
 comment or in `docs/`.
 
-Commit messages are written in Korean, in the declarative form (`~한다`):
+Commit messages are written in English, subject in the imperative mood:
 
 ```
-type(scope): 무엇을 하는지 한국어 평서형으로 (~한다)
+type(scope): what the change does, in the imperative
 
-왜 필요했는지와 무엇이 바뀌는지. 세 줄을 넘기지 않는다.
+Why it was needed and what changes. No more than three lines.
 ```
 
 - `type` is one of `feat` / `fix` / `refactor` / `chore` / `docs` / `test`.
 - `scope` is the area touched (`bash`, `windows`, `sounds`, `cli`, `nix`, …).
 - The subject describes an **action**, not a noun phrase — "reject unknown
-  voices", not "voice validation".
+  voices", not "voice validation". Lowercase, no trailing period.
 - One commit, one change. Fixing both implementations for the same reason is
   one change and one commit — splitting it leaves a commit that breaks the
   contract.

@@ -96,16 +96,18 @@ docker run --rm -v "$PWD:/w:ro" -w /w debian:stable-slim bash -c \
 **제목 1줄, 본문 3줄 이하.** 본문이 길어지면 그건 커밋이 아니라 주석이나
 `docs/` 로 갈 내용이다.
 
-```
-type(scope): 무엇을 하는지 한국어 평서형으로 (~한다)
+커밋 메시지는 영어로 쓰고, 제목은 명령형이다.
 
-왜 필요했는지와 무엇이 바뀌는지. 세 줄을 넘기지 않는다.
+```
+type(scope): what the change does, in the imperative
+
+Why it was needed and what changes. No more than three lines.
 ```
 
 - `type` 은 `feat` / `fix` / `refactor` / `chore` / `docs` / `test` 중 하나.
 - `scope` 는 건드린 자리(`bash`, `windows`, `sounds`, `cli`, `nix`…).
-- 제목은 명사구가 아니라 **동작**으로 쓴다 — "보이스 검증" 이 아니라
-  "없는 보이스를 거부한다".
+- 제목은 명사구가 아니라 **동작**으로 쓴다 — "voice validation" 이 아니라
+  "reject unknown voices". 소문자로 시작하고 마침표를 찍지 않는다.
 - 한 커밋은 한 가지 일만 한다. 양쪽 구현을 같은 이유로 고쳤으면 그건 한 가지
   일이니 한 커밋에 넣는다 — 갈라 놓으면 중간 커밋에서 계약이 깨진다.
 - 생성 도구를 언급하지 않는다. 트레일러도 붙이지 않는다.

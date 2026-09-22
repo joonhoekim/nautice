@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# 두 구현이 docs/cli.md 의 계약을 똑같이 지키는지 본다.
+#
+# 소리는 비교할 수 없으므로 --plan 이 찍는 해석 결과를 비교한다. OS 와 무관해야
+# 하는 필드는 완전히 같아야 하고, backend_* 는 계약의 환산식대로 나와야 한다.
+# 한쪽 구현만 있는 기계에서는 그쪽만 돌리고 비교는 건너뛴다.
+set -uo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+BASH_IMPL=bin/nautice
+PS_IMPL=bin/nautice.ps1
+
+# OS 와 무관하게 같아야 하는 필드. voice 와 backend_* 는 플랫폼마다 다르다.
+SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|text)='
+
+pass=0 fail=0
+ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; pass=$((pass + 1)); }
+bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; shift; printf '       %s\n' "$@"; fail=$((fail + 1)); }
+
+have_bash=0; [[ -x $BASH_IMPL ]] && have_bash=1
+have_ps=0
+PWSH=""
+if command -v pwsh >/dev/null 2>&1; then PWSH=pwsh
+elif command -v powershell >/dev/null 2>&1; then PWSH=powershell
+elif command -v nix >/dev/null 2>&1 && [[ ${NAUTICE_TEST_NIX_PWSH:-1} == 1 ]]; then
+  # 개발 기계에 pwsh 가 없어도 nix 가 있으면 빌려 쓴다.
+  nix shell nixpkgs#powershell -c pwsh -NoProfile -Command 'exit 0' >/dev/null 2>&1 \
+    && PWSH="nix-pwsh"
+fi
+[[ -n $PWSH && -f $PS_IMPL ]] && have_ps=1
+
+run_bash() { "$BASH_IMPL" "$@" 2>&1; }
+run_ps() {
+  case $PWSH in
+    nix-pwsh) nix shell nixpkgs#powershell -c pwsh -NoProfile -File "$PS_IMPL" "$@" 2>&1 ;;
+    *)        "$PWSH" -NoProfile -File "$PS_IMPL" "$@" 2>&1 ;;
+  esac
+}
+
+echo "적합성 — bash=$have_bash ps=$have_ps${PWSH:+ ($PWSH)}"
+echo
+
+# ── 계획 비교 ───────────────────────────────────────────────────────────────
+echo "계획 (OS 무관 필드가 같은가)"
+plan_case() {
+  local name=$1; shift
+  if (( have_bash == 0 || have_ps == 0 )); then
+    printf '  \033[33mskip\033[0m %s (구현 하나만 있다)\n' "$name"; return
+  fi
+  local a b
+  a=$(run_bash "$@" --plan | grep -E "$SHARED_FIELDS" | sort)
+  b=$(run_ps   "$@" --plan | grep -E "$SHARED_FIELDS" | sort)
+  if [[ $a == "$b" ]]; then ok "$name"
+  else bad "$name" "$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | head -8)"; fi
+}
+
+plan_case 'say 기본'            say "테스트 문구"
+plan_case 'say 볼륨/배속'       say -V 0.4 -r 1.5 "테스트 문구"
+plan_case 'say 보이스 지정'     say -v Heami "테스트 문구"
+plan_case 'play 이름표'         play ok
+plan_case 'play 반복'           play -n 3 -g 0.25 notify
+plan_case 'alert 톤 지정'       alert -t warn "디스크가 찼습니다"
+plan_case 'call 기본 2회'       call
+plan_case 'call 문구 지정'      call "확인 바랍니다"
+plan_case 'call 반복 덮어쓰기'  call -n 1 "한 번만"
+plan_case '-- 뒤는 전부 문구'   say -- "-v 처럼 보이는 문구"
+echo
+
+# ── 환산식 ──────────────────────────────────────────────────────────────────
+echo "단위 환산 (docs/cli.md 의 식대로인가)"
+check_rate() {
+  local impl=$1 mult=$2 want=$3 got
+  got=$(case $impl in
+          bash) run_bash say --plan -r "$mult" x ;;
+          ps)   run_ps   say --plan -r "$mult" x ;;
+        esac | sed -n 's/^backend_rate=//p')
+  if [[ $got == "$want" ]]; then ok "$impl rate $mult -> $want"
+  else bad "$impl rate $mult" "기대 $want, 실제 $got"; fi
+}
+if (( have_bash )); then
+  # macOS·Linux: 배속 x 175 wpm
+  for m in 0.5 1.0 1.5 2.0; do
+    check_rate bash "$m" "$(awk -v m="$m" 'BEGIN { printf "%d", m * 175 }')"
+  done
+fi
+if (( have_ps )); then
+  # Windows: round(10 * log3(배속)), -10..10 으로 자름
+  for m in 0.5 1.0 1.5 3.0; do
+    check_rate ps "$m" "$(awk -v m="$m" 'BEGIN {
+      r = 10 * log(m) / log(3)
+      r = (r < 0) ? int(r - 0.5) : int(r + 0.5)
+      if (r < -10) r = -10; if (r > 10) r = 10
+      printf "%d", r }')"
+  done
+fi
+echo
+
+# ── 거부해야 하는 입력 ──────────────────────────────────────────────────────
+echo "잘못된 입력은 양쪽 다 1 로 죽는가"
+reject_case() {
+  local name=$1; shift
+  local rc_a=0 rc_b=0
+  if (( have_bash )); then run_bash "$@" >/dev/null 2>&1; rc_a=$?; fi
+  if (( have_ps ));   then run_ps   "$@" >/dev/null 2>&1; rc_b=$?; fi
+  local bad_a=0 bad_b=0
+  (( have_bash && rc_a != 1 )) && bad_a=1
+  (( have_ps   && rc_b != 1 )) && bad_b=1
+  if (( bad_a || bad_b )); then bad "$name" "bash=$rc_a ps=$rc_b (둘 다 1 이어야 한다)"
+  else ok "$name"; fi
+}
+reject_case '모르는 옵션'   say --bogus x
+reject_case '모르는 명령'   bogus
+reject_case '없는 사운드'   play NoSuchSound
+reject_case '--repeat 범위' say -n 99 x
+reject_case '--gap 범위'    say -g 99 x
+reject_case '--rate 범위'   say -r 0 x
+reject_case 'play 인자없음' play
+echo
+
+# ── 도움말이 계약의 옵션을 다 적고 있는가 ───────────────────────────────────
+echo "도움말이 계약의 옵션을 다 적는가"
+for opt in --voice --vol --rate --tone --repeat --gap --async --quiet; do
+  miss=""
+  (( have_bash )) && ! run_bash --help | grep -q -- "$opt" && miss="bash"
+  (( have_ps ))   && ! run_ps   --help | grep -q -- "$opt" && miss="${miss:+$miss, }ps"
+  if [[ -n $miss ]]; then bad "$opt" "빠진 곳: $miss"; else ok "$opt"; fi
+done
+echo
+
+printf '%d 통과, %d 실패\n' "$pass" "$fail"
+(( fail == 0 ))

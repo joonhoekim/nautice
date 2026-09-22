@@ -169,6 +169,33 @@ for opt in --voice --vol --rate --tone --repeat --gap --async --quiet; do
 done
 echo
 
+# ── 버전 ────────────────────────────────────────────────────────────────────
+# 버전이 세 곳에 따로 박혀 있다. 하나만 올리면 --version 과 nix 패키지가 갈라져
+# 사용자가 어느 쪽을 쓰고 있는지 알 수 없게 된다. 파일에서 읽으므로 구현이
+# 하나뿐인 기계에서도 세 값을 다 본다.
+echo "버전이 세 곳에서 한 값인가"
+v_nix=$(sed -n 's/.*version = "\([^"]*\)".*/\1/p' flake.nix | head -1)
+v_bash=$(sed -n 's/^VERSION=//p' "$BASH_IMPL")
+v_ps=$(tr -d '\r' < "$PS_IMPL" | sed -n "s/^\$VERSION = '\(.*\)'$/\1/p")
+for pair in "flake.nix:$v_nix" "bin/nautice:$v_bash" "bin/nautice.ps1:$v_ps"; do
+  where=${pair%%:*} got=${pair#*:}
+  if [[ -z $got ]]; then bad "$where" "버전을 못 읽었다"
+  elif [[ $got == "$v_nix" ]]; then ok "$where $got"
+  else bad "$where" "flake.nix 는 $v_nix, $where 는 $got"; fi
+done
+# --version 이 실제로 그 값을 찍는지까지 본다.
+if (( have_bash )); then
+  got=$(run_bash --version)
+  if [[ $got == "nautice $v_bash" ]]; then ok "bash --version"
+  else bad "bash --version" "기대 'nautice $v_bash', 실제 '$got'"; fi
+fi
+if (( have_ps )); then
+  got=$(run_ps --version)
+  if [[ $got == "nautice $v_ps" ]]; then ok "ps --version"
+  else bad "ps --version" "기대 'nautice $v_ps', 실제 '$got'"; fi
+fi
+echo
+
 # ── 계약이 구현의 환경변수를 다 적고 있는가 ─────────────────────────────────
 # 한쪽에만 적힌 변수는 아무도 못 찾는다. 파일만 읽으므로 구현이 하나뿐인
 # 기계에서도 돈다.

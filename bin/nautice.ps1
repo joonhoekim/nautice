@@ -209,7 +209,8 @@ function Invoke-Emit([hashtable] $o, [string] $chime, $synth, [string] $text) {
 
 # 소리를 내지 않고 해석 결과만 찍는다. 앞쪽 블록은 OS 와 무관하게 같아야 하고,
 # backend_* 는 docs/cli.md 의 환산식대로 나와야 한다 — test/conformance 가 본다.
-# 보이스 해석은 System.Speech 를 타므로 여기서는 요구값만 찍는다.
+# 보이스 해석은 System.Speech 를 타므로 여기서는 요구값만 찍는다. lang 은 그
+# 해석의 근거이고 System.Speech 없이 나오므로, voice 와 달리 양쪽을 맞댈 수 있다.
 function Write-Plan([hashtable] $o, [string] $cmd, [string] $tone, [string] $text) {
     $vol  = [double](Coalesce $o.Vol  $Defaults.Vol)
     $rate = [double](Coalesce $o.Rate $Defaults.Rate)
@@ -223,6 +224,7 @@ function Write-Plan([hashtable] $o, [string] $cmd, [string] $tone, [string] $tex
     Write-Output ("gap={0:F3}" -f $o.Gap)
     Write-Output "tone=$tone"
     Write-Output "text=$text"
+    Write-Output "lang=$(if (Test-Hangul $text) { 'ko' } else { 'en' })"
     Write-Output "backend=windows"
     Write-Output "backend_rate=$(ConvertTo-SapiRate $rate)"
     Write-Output "backend_vol=$(ConvertTo-SapiVolume $vol)"

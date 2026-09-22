@@ -11,7 +11,7 @@ BASH_IMPL=bin/nautice
 PS_IMPL=bin/nautice.ps1
 
 # OS 와 무관하게 같아야 하는 필드. voice 와 backend_* 는 플랫폼마다 다르다.
-SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|text)='
+SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|text|lang)='
 
 pass=0 fail=0
 ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; pass=$((pass + 1)); }
@@ -73,6 +73,13 @@ plan_case 'call 기본 2회'       call
 plan_case 'call 문구 지정'      call "확인 바랍니다"
 plan_case 'call 반복 덮어쓰기'  call -n 1 "한 번만"
 plan_case '-- 뒤는 전부 문구'   say -- "-v 처럼 보이는 문구"
+# 언어 판정 — lang 이 갈라지면 같은 문구가 OS 마다 다른 보이스로 나간다.
+plan_case '한글이면 ko'         say "빌드가 끝났습니다"
+plan_case '영어면 en'           say "build finished"
+# 악센트 붙은 라틴 문자는 UTF-8 에서 C3 로 시작한다. 앞 글자가 n(6E)·.(2E) 처럼
+# e 로 끝나는 바이트면 hex 를 붙여 볼 때 ec 가 생겨 한국어로 넘어가던 자리다.
+plan_case '악센트 라틴은 en'    say "Renée finished the nüance"
+plan_case '섞이면 ko'           say "build 가 끝났습니다"
 echo
 
 # ── 환산식 ──────────────────────────────────────────────────────────────────

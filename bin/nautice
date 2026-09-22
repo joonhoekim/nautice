@@ -118,8 +118,13 @@ audio_play() {
 # 죽는다. 바이트로 보면 둘 다 안 생긴다.
 #
 # EA–ED 는 U+A000–U+DFFF 이라 이(Yi)·바이(Vai) 문자도 한글로 친다. 그 글자들이
-# 알림 문구에 섞일 일은 없다고 보고 받아들인다.
-has_hangul() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n' | grep -qE 'e[a-d]'; }
+# 알림 문구에 섞일 일은 없다고 보고 받아들인다 — docs/cli.md 의 플랫폼 차이에 적혀 있다.
+#
+# hex 를 한 덩어리로 붙이면 안 된다. 앞 바이트의 끝자리 e 와 뒷 바이트의 첫자리
+# a–d 가 맞닿아 매치한다 — "Renée" 는 6e c3 라서 "…6ec3…" 안에 ec 가 생기고,
+# 영어 문장이 한국어 보이스로 나간다. 소리는 나므로 귀로도 놓친다. 바이트마다
+# 줄을 끊고 -qx 로 줄 전체를 맞춘다. od 가 같은 줄을 * 로 접지 않도록 -v 를 준다.
+has_hangul() { printf '%s' "$1" | od -An -tx1 -v | tr ' ' '\n' | grep -qxE 'e[a-d]'; }
 
 # macOS: say -v '?' 는 0.5s 걸린다. 한 번만 부르고 "이름<TAB>언어" 로 캐시에 적는다.
 # 이름 자체에 공백과 괄호가 들어가므로 (`Jian (Premium)`,
@@ -273,8 +278,11 @@ emit() {
 
 # 소리를 내지 않고 해석 결과만 찍는다. 앞쪽 블록은 OS 와 무관하게 같아야 하고,
 # backend_* 는 docs/cli.md 의 환산식대로 나와야 한다 — test/conformance 가 본다.
+# lang 은 보이스를 고르는 근거다. voice 는 OS 마다 달라 비교할 수 없으므로,
+# 이게 없으면 한글 감지가 두 구현에서 갈라져도 테스트가 못 본다.
 print_plan() {
-  local cmd=$1 voice=$2 tone=$3 text=$4
+  local cmd=$1 voice=$2 tone=$3 text=$4 lang
+  if has_hangul "$text"; then lang=ko; else lang=en; fi
   printf 'command=%s\n' "$cmd"
   printf 'voice_req=%s\n' "${OPT_VOICE:-$NAUTICE_VOICE}"
   printf 'voice=%s\n' "$voice"
@@ -284,6 +292,7 @@ print_plan() {
   printf 'gap=%.3f\n' "$OPT_GAP"
   printf 'tone=%s\n' "$tone"
   printf 'text=%s\n' "$text"
+  printf 'lang=%s\n' "$lang"
   printf 'backend=%s\n' "$PLATFORM"
   printf 'backend_rate=%s\n' "$(wpm_for "${OPT_RATE:-$NAUTICE_RATE}")"
   printf 'backend_vol=%.3f\n' "${OPT_VOL:-$NAUTICE_VOL}"

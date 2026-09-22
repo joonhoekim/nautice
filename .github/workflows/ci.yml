@@ -20,7 +20,7 @@ jobs:
       # nix 로 빌려 오는 길을 막고, 아래 단계에서 없으면 그 자리에서 실패시킨다.
       NAUTICE_TEST_NIX_PWSH: 0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: pwsh 가 있는지 확인한다
         shell: bash
@@ -50,6 +50,6 @@ jobs:
     name: nix build (shellcheck 포함)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v30
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
       - run: nix build .#nautice -L

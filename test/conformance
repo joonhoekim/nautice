@@ -132,6 +132,8 @@ reject_case() {
 }
 reject_case '모르는 옵션'   say --bogus x
 reject_case '모르는 명령'   bogus
+reject_case 'cache 모르는 인자' cache bogus
+reject_case 'list 모르는 인자'  list bogus
 reject_case '없는 사운드'   play NoSuchSound
 # --plan 이 해석을 건너뛰면 훅을 고치다 낸 오타를 여기서 못 잡는다.
 reject_case '없는 사운드 --plan' play NoSuchSound --plan

@@ -357,7 +357,10 @@ function Invoke-Doctor([hashtable] $o) {
 }
 
 function Invoke-Cache([hashtable] $o) {
-    # Windows 는 TTS 를 파일로 렌더하지 않으므로 비울 것이 없다.
+    # Windows 는 TTS 를 파일로 렌더하지 않으므로 비울 것이 없다. 그래도 인자는
+    # 계약대로 가린다 — 안 가리면 `cache clera` 같은 오타가 0 으로 통과한다.
+    $what = if ($o.Rest.Count -gt 0) { $o.Rest[0] } else { 'info' }
+    if ($what -cne 'info' -and $what -cne 'clear') { Die 'cache 대상: info | clear' }
     Write-Output '이 플랫폼은 렌더 캐시를 쓰지 않는다 (SAPI 가 볼륨·속도를 직접 받는다)'
 }
 

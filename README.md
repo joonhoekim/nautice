@@ -11,8 +11,13 @@ nautice play ok
 nautice alert -t warn -n 3 "디스크가 찼습니다"
 ```
 
-소리가 지금 있는 채널이고, 화면 깜빡임·텍스트 띄우기 같은 시각 채널을 같은
-계약 위에 얹는 것이 목표다.
+```
+nautice call -c both                  # 소리 + OS 알림 배너
+nautice say -c visual "빌드 끝"       # 배너만
+```
+
+소리와 시각(OS 알림 배너)이 같은 계약 위에 있다. 문구도 옵션도 그대로고
+`--channel` 하나로 고른다.
 
 ## 왜 OS 도구를 그냥 안 쓰나
 
@@ -25,6 +30,7 @@ nautice alert -t warn -n 3 "디스크가 찼습니다"
 | 보이스 | 이름을 직접 알아야 함 | 한글이면 한국어, macOS 는 최고 품질 자동 |
 | 효과음 | OS 마다 목록도 이름도 다름 | 같은 파일을 번들로 — 알림의 뜻이 안 흔들린다 |
 | 훅에서 호출 | 재생 끝까지 블록 | `-a` 로 즉시 반환 |
+| 시각 알림 | osascript / notify-send / 토스트 제각각 | `-c both`, 세 OS 한 옵션 |
 
 ## 설치
 
@@ -47,11 +53,11 @@ Git Bash 에서 `nautice` 를 부르면 `nautice.ps1` 로 넘어간다 — 이�
 
 ## 플랫폼별 준비물
 
-| | TTS | 재생 | 비고 |
-|---|---|---|---|
-| macOS | `say` (내장) | `afplay` (내장) | 받을 게 없다 |
-| Windows | System.Speech (내장) | SoundPlayer (내장) | 받을 게 없다 |
-| Linux | `espeak-ng` | `pw-play`·`paplay`·`aplay`·`ffplay`·`mpv` 중 하나 | nix 패키지가 espeak-ng 를 딸려 보낸다 |
+| | TTS | 재생 | 배너 | 비고 |
+|---|---|---|---|---|
+| macOS | `say` (내장) | `afplay` (내장) | `osascript` (내장) | 받을 게 없다 |
+| Windows | System.Speech (내장) | SoundPlayer (내장) | NotifyIcon (내장) | 받을 게 없다 |
+| Linux | `espeak-ng` | `pw-play`·`paplay`·`aplay`·`ffplay`·`mpv` 중 하나 | `notify-send` | nix 패키지가 espeak-ng 와 libnotify 를 딸려 보낸다 |
 
 `nautice doctor` 가 무엇이 없는지, 어느 백엔드를 쓰는지 알려준다.
 
@@ -125,12 +131,15 @@ nix build .#nautice    # shellcheck 까지 돈다
 - **한글 감지** — 정규식이 아니라 UTF-8 바이트(EA–ED)로 본다. `LC_CTYPE` 이 `C` 면
   `[가-힣]` 이 모든 문자에 매치해서 영어 문장도 한국어로 나가고, 자모까지 묶으면
   en_US 콜레이션에서 죽는다. 판정 결과는 `--plan` 의 `lang` 으로 드러난다.
+- **배너** — `--channel` 로 켠다. `--repeat` 을 따르지 않고 한 번만 뜬다 — 같은
+  배너가 알림 센터에 쌓이면 읽을 수 없다. 백엔드가 0 을 냈다고 배너가 떴다는
+  뜻은 아니다: 알림 권한이 없거나 집중 모드면 조용히 눌린다.
 - **`afplay` 기동 비용** — 약 0.95초다 (0.43초 파일 재생에 1.38초, macOS 26 / M 계열).
   짧은 알림음에서는 이게 소리 길이보다 크다. 훅은 `-a` 로 떼어내므로 보이지 않는다.
 
 ## 환경변수
 
 `NAUTICE_VOICE` `NAUTICE_VOICE_KO` `NAUTICE_VOICE_EN` `NAUTICE_VOL` `NAUTICE_RATE`
-`NAUTICE_CACHE` `NAUTICE_SOUNDS` `NAUTICE_PIPER_MODEL`
+`NAUTICE_CHANNEL` `NAUTICE_CACHE` `NAUTICE_SOUNDS` `NAUTICE_PIPER_MODEL`
 
 자세한 것은 [`docs/cli.md`](docs/cli.md).

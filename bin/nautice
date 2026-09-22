@@ -11,7 +11,7 @@ set -euo pipefail
 if [[ -n ${LC_ALL:-} ]]; then export LC_CTYPE="$LC_ALL"; unset LC_ALL; fi
 export LC_NUMERIC=C
 
-VERSION=0.2.0
+VERSION=0.3.0
 
 : "${NAUTICE_CACHE:=${XDG_CACHE_HOME:-$HOME/.cache}/nautice}"
 : "${NAUTICE_VOICE:=auto}"
@@ -20,6 +20,7 @@ VERSION=0.2.0
 : "${NAUTICE_VOL:=0.6}"
 : "${NAUTICE_RATE:=1.0}"
 : "${NAUTICE_PIPER_MODEL:=}"
+: "${NAUTICE_CHANNEL:=sound}"
 
 # 부를 때마다 두 번 반복하므로 짧아야 한다. 긴 문구를 쓰면 call 하나가 10초를 넘는다.
 CALL_MESSAGE='클로드가 부릅니다'
@@ -106,6 +107,45 @@ audio_play() {
     mpv)     mpv --really-quiet --volume="$(awk -v v="$vol" 'BEGIN{printf "%d", v*100}')" "$file" ;;
   esac
 }
+
+# ── 시각 채널 (배너) ────────────────────────────────────────────────────────
+# 백엔드를 불렀다고 배너가 떴다는 뜻은 아니다. osascript 는 알림 권한이 없거나
+# 집중 모드에 눌려도 0 을 내고, notify-send 도 데몬이 버리면 그렇다. say 가 없는
+# 보이스를 조용히 넘기는 것과 같은 종류의 실패다 — docs/cli.md 에 적어 뒀다.
+visual_backend() {
+  case $PLATFORM in
+    macos) printf 'osascript' ;;
+    linux) printf 'notify-send' ;;
+  esac
+}
+
+banner_show() {
+  local text=$1 b; b=$(visual_backend)
+  command -v "$b" >/dev/null 2>&1 \
+    || die "$b 가 없다 (--channel 로 시각 채널을 쓰려면 필요하다)"
+  case $PLATFORM in
+    macos)
+      # 문구를 AppleScript 문자열 리터럴에 끼워 넣지 않는다. 따옴표와 역슬래시를
+      # 일일이 이스케이프해야 하고 한 군데만 새도 스크립트가 다른 뜻이 된다.
+      # argv 로 넘기면 이스케이프가 아예 필요 없다.
+      osascript - "$text" nautice <<'AS' >/dev/null
+on run argv
+  display notification (item 1 of argv) with title (item 2 of argv)
+end run
+AS
+      ;;
+    linux) notify-send -- nautice "$text" ;;
+  esac
+}
+
+# 배너는 --repeat 을 따르지 않는다. 같은 알림이 센터에 쌓이면 읽을 수 없다.
+maybe_banner() {
+  [[ $CHANNEL == sound ]] && return 0
+  banner_show "$1"
+}
+
+# 상태 줄에 배너를 같이 냈다는 것을 덧붙인다.
+chan_note() { [[ $CHANNEL == sound ]] || printf ' +배너'; }
 
 # ── 보이스 ──────────────────────────────────────────────────────────────────
 # 한글 음절(U+AC00–U+D7A3)은 UTF-8 에서 첫 바이트가 EA–ED 다. 이어지는 바이트는
@@ -291,11 +331,13 @@ print_plan() {
   printf 'repeat=%d\n' "$OPT_REPEAT"
   printf 'gap=%.3f\n' "$OPT_GAP"
   printf 'tone=%s\n' "$tone"
+  printf 'channel=%s\n' "$CHANNEL"
   printf 'text=%s\n' "$text"
   printf 'lang=%s\n' "$lang"
   printf 'backend=%s\n' "$PLATFORM"
   printf 'backend_rate=%s\n' "$(wpm_for "${OPT_RATE:-$NAUTICE_RATE}")"
   printf 'backend_vol=%.3f\n' "${OPT_VOL:-$NAUTICE_VOL}"
+  printf 'backend_visual=%s\n' "$(visual_backend)"
 }
 
 read_text() {
@@ -313,15 +355,19 @@ cmd_say() {
     voice=$(resolve_voice "$text" 2>/dev/null) || voice=''
     print_plan say "$voice" '' "$text"; return 0
   fi
+  maybe_banner "$text"
+  if [[ $CHANNEL == visual ]]; then say_status "say 배너만"; return 0; fi
   voice=$(resolve_voice "$text")
   speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
-  say_status "say x$OPT_REPEAT [$voice]"
+  say_status "say x$OPT_REPEAT [$voice]$(chan_note)"
   with_lock emit "" "$speech"
 }
 
 cmd_play() {
   local file
   [[ $# -gt 0 && -n ${1:-} ]] || die "사운드 이름이나 경로가 필요하다 (nautice list sounds)"
+  # 효과음에는 문구가 없어 배너에 적을 것이 없다.
+  [[ $CHANNEL == sound ]] || die "play 는 문구가 없어 시각 채널을 못 쓴다 (--channel sound)"
   file=$(sfx_resolve "$1")
   [[ $OPT_PLAN == 1 ]] && { print_plan play '' "$1" ''; return 0; }
   say_status "play x$OPT_REPEAT [$1]"
@@ -336,10 +382,12 @@ cmd_alert() {
     voice=$(resolve_voice "$text" 2>/dev/null) || voice=''
     print_plan "$CMD_NAME" "$voice" "${OPT_TONE:-ask}" "$text"; return 0
   fi
+  maybe_banner "$text"
+  if [[ $CHANNEL == visual ]]; then say_status "$CMD_NAME 배너만"; return 0; fi
   voice=$(resolve_voice "$text")
   speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
   chime=$(sfx_resolve "${OPT_TONE:-ask}")
-  say_status "alert x$OPT_REPEAT [$voice]"
+  say_status "alert x$OPT_REPEAT [$voice]$(chan_note)"
   with_lock emit "$chime" "$speech"
 }
 
@@ -408,6 +456,12 @@ cmd_doctor() {
   if command -v flock >/dev/null; then printf '  %-12s %s\n' flock "$(command -v flock)"
   else printf '  %-12s 없음 — mkdir 락으로 대체\n' flock; fi
 
+  # 시각 채널은 선택이라 없어도 doctor 를 실패로 보지 않는다. 다만 --channel 을
+  # 주면 그 자리에서 죽으므로 여기서 미리 밝힌다.
+  local vb; vb=$(visual_backend)
+  if command -v "$vb" >/dev/null; then printf '  %s %s\n' '배너        ' "$(command -v "$vb")"
+  else printf '  %s 없음 (%s) — --channel visual 을 못 쓴다\n' '배너        ' "$vb"; fi
+
   printf '  %s %s\n' '효과음      ' "$(find_sounds)"
   printf '  %s %s' '캐시        ' "$NAUTICE_CACHE"
   if [[ -d $NAUTICE_CACHE ]]; then
@@ -459,6 +513,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   -V, --vol N        0.0 ~ 1.0            (기본 0.6)
   -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
   -t, --tone NAME    alert/call 의 효과음  (기본 ask)
+  -c, --channel NAME sound | visual | both (기본 sound)
   -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
   -g, --gap SEC      반복 사이 간격        (기본 0.4)
   -a, --async        기다리지 않고 반환 (훅에서 필수)
@@ -471,12 +526,13 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   nautice say "빌드가 끝났습니다"
   nautice alert -t warn -n 3 "디스크가 찼습니다"
   nautice play -V 0.3 ok
+  nautice call -c both              # 소리 + 알림 배너
   echo "파이프도 된다" | nautice say
 USAGE
 }
 
 # ── 인자 ────────────────────────────────────────────────────────────────────
-OPT_VOICE='' OPT_VOL='' OPT_RATE='' OPT_TONE=''
+OPT_VOICE='' OPT_VOL='' OPT_RATE='' OPT_TONE='' OPT_CHANNEL=''
 OPT_REPEAT=1 OPT_GAP=0.4 OPT_QUIET=0 OPT_ASYNC=0 OPT_PLAN=0
 CMD_NAME=''
 REPEAT_GIVEN=0
@@ -515,6 +571,7 @@ while (($#)); do
     -V|--vol)    need_val "$@"; OPT_VOL=$2;   shift 2 ;;
     -r|--rate)   need_val "$@"; OPT_RATE=$2;  shift 2 ;;
     -t|--tone)   need_val "$@"; OPT_TONE=$2;  shift 2 ;;
+    -c|--channel) need_val "$@"; OPT_CHANNEL=$2; shift 2 ;;
     -n|--repeat) need_val "$@"; OPT_REPEAT=$2; REPEAT_GIVEN=1; shift 2 ;;
     -g|--gap)    need_val "$@"; OPT_GAP=$2;   shift 2 ;;
     -a|--async)  OPT_ASYNC=1;  shift ;;
@@ -534,6 +591,12 @@ set -- "${ARGS[@]:-}"
 check_int --repeat "$OPT_REPEAT" 1 20
 check_num --gap    "$OPT_GAP"    0 10
 
+CHANNEL=${OPT_CHANNEL:-$NAUTICE_CHANNEL}
+case $CHANNEL in
+  sound|visual|both) ;;
+  *) die "--channel 은 sound | visual | both 다: $CHANNEL" ;;
+esac
+
 # 훅에서 쓰려면 에이전트를 막지 않아야 한다. 인자를 다 검사한 뒤에 떼어내므로
 # 인자가 틀렸으면 떼어내기 전에 여기서 죽는다.
 detach() {
@@ -542,6 +605,7 @@ detach() {
   [[ -n $OPT_VOL   ]] && args+=(--vol   "$OPT_VOL")
   [[ -n $OPT_RATE  ]] && args+=(--rate  "$OPT_RATE")
   [[ -n $OPT_TONE  ]] && args+=(--tone  "$OPT_TONE")
+  args+=(--channel "$CHANNEL")
   [[ $REPEAT_GIVEN == 1 ]] && args+=(--repeat "$OPT_REPEAT")
   args+=(--gap "$OPT_GAP" --quiet --)
   nohup "$0" "${args[@]}" "$@" >/dev/null 2>&1 &

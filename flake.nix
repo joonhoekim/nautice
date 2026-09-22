@@ -17,11 +17,14 @@
           # macOS 는 say/afplay 가 OS 내장이라 넣을 게 없다. Linux 는 TTS 백엔드가
           # 없으면 아무것도 못 하므로 espeak-ng 를 딸려 보낸다. 재생기는 시스템이
           # 준다 (PipeWire 의 pw-play, PulseAudio 의 paplay, ALSA 의 aplay).
-          runtime = [ pkgs.flock ] ++ lib.optional stdenv.hostPlatform.isLinux pkgs.espeak-ng;
+          # Linux 는 TTS 도 배너도 시스템이 안 준다. macOS 는 say·afplay·osascript 가
+          # 다 OS 내장이라 넣을 게 없다.
+          runtime = [ pkgs.flock ]
+            ++ lib.optionals stdenv.hostPlatform.isLinux [ pkgs.espeak-ng pkgs.libnotify ];
         in rec {
           nautice = stdenv.mkDerivation {
             pname = "nautice";
-            version = "0.2.0";
+            version = "0.3.0";
             src = ./.;
 
             nativeBuildInputs = [ pkgs.makeWrapper ];

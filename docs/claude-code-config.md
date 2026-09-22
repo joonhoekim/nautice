@@ -22,6 +22,13 @@
 `Notification` 은 Claude 가 사람을 기다릴 때(권한 요청, 입력 대기) 울리고,
 `Stop` 은 한 턴을 마쳤을 때 울린다. Windows 에서는 `nautice.cmd` 로 적는다.
 
+자리를 비울 때가 많으면 `-c both` 를 붙인다. 소리는 그 순간에만 들리지만
+배너는 알림 센터에 남아서 돌아와서 볼 수 있다.
+
+```json
+{ "type": "command", "command": "nautice call -a -q -c both" }
+```
+
 ## 2. 훅 없이, 에이전트가 판단해서 부르게 하기
 
 훅은 무조건 울린다. 필요할 때만 부르게 하려면 훅을 걸지 말고 `CLAUDE.md` 에

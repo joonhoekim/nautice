@@ -11,7 +11,7 @@ BASH_IMPL=bin/nautice
 PS_IMPL=bin/nautice.ps1
 
 # OS 와 무관하게 같아야 하는 필드. voice 와 backend_* 는 플랫폼마다 다르다.
-SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|text|lang)='
+SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|channel|text|lang)='
 
 pass=0 fail=0
 ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; pass=$((pass + 1)); }
@@ -80,6 +80,11 @@ plan_case '영어면 en'           say "build finished"
 # e 로 끝나는 바이트면 hex 를 붙여 볼 때 ec 가 생겨 한국어로 넘어가던 자리다.
 plan_case '악센트 라틴은 en'    say "Renée finished the nüance"
 plan_case '섞이면 ko'           say "build 가 끝났습니다"
+# 채널 — 배너를 낼지 소리를 낼지는 OS 와 무관하게 같아야 한다.
+plan_case 'channel 기본 sound'  say "테스트 문구"
+plan_case 'channel visual'      say -c visual "테스트 문구"
+plan_case 'channel both'        alert -c both -t warn "디스크가 찼습니다"
+plan_case 'channel call both'   call --channel both
 
 # 문구를 인자가 아니라 파이프로 받는 자리. Windows 는 콘솔 코드페이지로 디코드
 # 하면 한글이 쓰레기가 되므로 stdin 을 UTF-8 로 직접 읽는다 — 그게 살아 있는지
@@ -156,6 +161,10 @@ reject_case '없는 사운드'   play NoSuchSound
 # --plan 이 해석을 건너뛰면 훅을 고치다 낸 오타를 여기서 못 잡는다.
 reject_case '없는 사운드 --plan' play NoSuchSound --plan
 reject_case '없는 톤'       alert -t NoSuchTone x
+reject_case '모르는 채널'   say -c bogus x
+# 효과음에는 문구가 없어 배너에 적을 것이 없다.
+reject_case 'play 에 visual' play -c visual ok
+reject_case 'play 에 both'   play -c both ok
 reject_case '--repeat 범위' say -n 99 x
 reject_case '--gap 범위'    say -g 99 x
 reject_case '--rate 범위'   say -r 0 x
@@ -167,6 +176,7 @@ reject_case '값 빠진 -r'    say -r
 reject_case '값 빠진 -n'    say -n
 reject_case '값 빠진 -g'    say -g
 reject_case '값 빠진 -t'    say -t
+reject_case '값 빠진 -c'    say -c
 reject_case '--vol 문자'    say -V xyz x
 reject_case '--rate 문자'   say -r abc x
 reject_case '--repeat 문자' say -n q x
@@ -179,7 +189,7 @@ echo
 
 # ── 도움말이 계약의 옵션을 다 적고 있는가 ───────────────────────────────────
 echo "도움말이 계약의 옵션을 다 적는가"
-for opt in --voice --vol --rate --tone --repeat --gap --async --quiet; do
+for opt in --voice --vol --rate --tone --channel --repeat --gap --async --quiet; do
   miss=""
   (( have_bash )) && ! run_bash --help | grep -q -- "$opt" && miss="bash"
   (( have_ps ))   && ! run_ps   --help | grep -q -- "$opt" && miss="${miss:+$miss, }ps"

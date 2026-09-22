@@ -27,7 +27,7 @@ $ErrorActionPreference = 'Stop'
 $SystemCulture = [Globalization.CultureInfo]::CurrentCulture
 [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
 
-$VERSION = '0.2.0'
+$VERSION = '0.3.0'
 
 # 부를 때마다 두 번 반복하므로 짧아야 한다.
 $CallMessage = '클로드가 부릅니다'
@@ -46,6 +46,7 @@ $Defaults = @{
     VoiceEn = Get-Env 'NAUTICE_VOICE_EN' 'best'
     Vol     = [double](Get-Env 'NAUTICE_VOL'  '0.6')
     Rate    = [double](Get-Env 'NAUTICE_RATE' '1.0')
+    Channel = Get-Env 'NAUTICE_CHANNEL' 'sound'
 }
 
 function Die($msg) { [Console]::Error.WriteLine("nautice: $msg"); exit 1 }
@@ -55,7 +56,8 @@ function Die($msg) { [Console]::Error.WriteLine("nautice: $msg"); exit 1 }
 # -v(보이스) 와 -V(볼륨) 를 구분하지 못한다. docs/cli.md 의 계약을 그대로
 # 지키려면 $args 를 직접 훑어야 한다. -ceq 가 대소문자를 구분한다.
 $ValueOpts = @('-v', '--voice', '-V', '--vol', '-r', '--rate',
-               '-t', '--tone', '-n', '--repeat', '-g', '--gap')
+               '-t', '--tone', '-n', '--repeat', '-g', '--gap',
+               '-c', '--channel')
 
 # [double] 캐스트를 그냥 쓰면 `-r abc` 가 .NET 의 변환 예외 스택을 사용자에게
 # 뱉는다. bash 쪽은 awk 가 범위를 재다 실패해 제 문구로 죽으므로 여기서 맞춘다.
@@ -76,7 +78,7 @@ function ConvertTo-Int([string] $v, [string] $label) {
 
 function Parse-Args([string[]] $argv) {
     $o = @{
-        Voice = ''; Vol = $null; Rate = $null; Tone = ''
+        Voice = ''; Vol = $null; Rate = $null; Tone = ''; Channel = ''
         Repeat = 1; Gap = 0.4; Quiet = $false; Async = $false; Plan = $false; PlanName = ''
         RepeatGiven = $false; Rest = @(); Command = ''
     }
@@ -94,6 +96,7 @@ function Parse-Args([string[]] $argv) {
             { $_ -ceq '-V' -or $_ -ceq '--vol'    } { $o.Vol   = ConvertTo-Num $argv[$i + 1] '--vol' }
             { $_ -ceq '-r' -or $_ -ceq '--rate'   } { $o.Rate  = ConvertTo-Num $argv[$i + 1] '--rate' }
             { $_ -ceq '-t' -or $_ -ceq '--tone'   } { $o.Tone  = $argv[$i + 1] }
+            { $_ -ceq '-c' -or $_ -ceq '--channel'} { $o.Channel = $argv[$i + 1] }
             { $_ -ceq '-n' -or $_ -ceq '--repeat' } { $o.Repeat = ConvertTo-Int $argv[$i + 1] '--repeat'; $o.RepeatGiven = $true }
             { $_ -ceq '-g' -or $_ -ceq '--gap'    } { $o.Gap   = ConvertTo-Num $argv[$i + 1] '--gap' }
             { $_ -ceq '-a' -or $_ -ceq '--async'  } { $o.Async = $true;  $needsValue = $false }
@@ -135,6 +138,37 @@ function ConvertTo-SapiVolume([double] $vol) {
 }
 
 function Test-Hangul([string] $text) { return $text -match '[가-힣]' }
+
+# ── 시각 채널 (배너) ────────────────────────────────────────────────────────
+# NotifyIcon 의 벌룬은 프로세스가 트레이 아이콘을 잡고 있는 동안만 뜬다. 바로
+# Dispose 하면 아무것도 안 보인다. 그래서 띄워 두고 소리를 낸 뒤 정리하며,
+# 소리가 더 짧게 끝났으면 남은 만큼 기다린다. macOS·Linux 는 알림 데몬에 넘기고
+# 바로 끝나므로 이 대기가 없다 — docs/cli.md 의 플랫폼 차이에 적혀 있다.
+$BannerHoldMs = 2000
+
+function New-Banner([hashtable] $o, [string] $text) {
+    if ($o.Channel -ceq 'sound') { return $null }
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $ni = New-Object System.Windows.Forms.NotifyIcon
+    $ni.Icon = [System.Drawing.SystemIcons]::Information
+    $ni.Visible = $true
+    $ni.ShowBalloonTip($BannerHoldMs, 'nautice', $text, [System.Windows.Forms.ToolTipIcon]::Info)
+    return @{ Icon = $ni; Watch = [Diagnostics.Stopwatch]::StartNew() }
+}
+
+function Close-Banner($b) {
+    if ($null -eq $b) { return }
+    $left = $BannerHoldMs - $b.Watch.ElapsedMilliseconds
+    if ($left -gt 0) { Start-Sleep -Milliseconds $left }
+    $b.Icon.Visible = $false
+    $b.Icon.Dispose()
+}
+
+# 상태 줄에 배너를 같이 냈다는 것을 덧붙인다.
+function Get-ChanNote([hashtable] $o) {
+    if ($o.Channel -ceq 'sound') { return '' } else { return ' +배너' }
+}
 
 # ── 효과음 ──────────────────────────────────────────────────────────────────
 function Get-SoundsDir {
@@ -231,11 +265,13 @@ function Write-Plan([hashtable] $o, [string] $cmd, [string] $tone, [string] $tex
     Write-Output "repeat=$($o.Repeat)"
     Write-Output ("gap={0:F3}" -f $o.Gap)
     Write-Output "tone=$tone"
+    Write-Output "channel=$($o.Channel)"
     Write-Output "text=$text"
     Write-Output "lang=$(if (Test-Hangul $text) { 'ko' } else { 'en' })"
     Write-Output "backend=windows"
     Write-Output "backend_rate=$(ConvertTo-SapiRate $rate)"
     Write-Output "backend_vol=$(ConvertTo-SapiVolume $vol)"
+    Write-Output "backend_visual=notifyicon"
 }
 
 function Write-Status([hashtable] $o, [string] $line) {
@@ -260,15 +296,19 @@ function Read-Text([hashtable] $o) {
 function Invoke-Say([hashtable] $o) {
     $text = Read-Text $o
     if ($o.Plan) { Write-Plan $o 'say' '' $text; return }
+    $banner = New-Banner $o $text
+    if ($o.Channel -ceq 'visual') { Write-Status $o 'say 배너만'; Close-Banner $banner; return }
     $synth = New-Synth $o $text
     try {
-        Write-Status $o "say x$($o.Repeat) [$($synth.Voice.Name)]"
+        Write-Status $o "say x$($o.Repeat) [$($synth.Voice.Name)]$(Get-ChanNote $o)"
         Invoke-Emit $o '' $synth $text
-    } finally { $synth.Dispose() }
+    } finally { $synth.Dispose(); Close-Banner $banner }
 }
 
 function Invoke-Play([hashtable] $o) {
     if ($o.Rest.Count -eq 0) { Die '사운드 이름이나 경로가 필요하다 (nautice list sounds)' }
+    # 효과음에는 문구가 없어 배너에 적을 것이 없다.
+    if ($o.Channel -cne 'sound') { Die 'play 는 문구가 없어 시각 채널을 못 쓴다 (--channel sound)' }
     # 해석이 계획보다 먼저다. 없는 사운드는 --plan 에서도 1 로 죽어야 bash 와 같다.
     $file = Resolve-Sfx $o.Rest[0]
     if ($o.Plan) { Write-Plan $o 'play' $o.Rest[0] ''; return }
@@ -281,12 +321,14 @@ function Invoke-Alert([hashtable] $o) {
     $text = Read-Text $o
     $tone = if ($o.Tone) { $o.Tone } else { 'ask' }
     if ($o.Plan) { Write-Plan $o $o.PlanName $tone $text; return }
+    $banner = New-Banner $o $text
+    if ($o.Channel -ceq 'visual') { Write-Status $o "$($o.PlanName) 배너만"; Close-Banner $banner; return }
     $chime = Resolve-Sfx $tone
     $synth = New-Synth $o $text
     try {
-        Write-Status $o "alert x$($o.Repeat) [$($synth.Voice.Name)]"
+        Write-Status $o "alert x$($o.Repeat) [$($synth.Voice.Name)]$(Get-ChanNote $o)"
         Invoke-Emit $o $chime $synth $text
-    } finally { $synth.Dispose() }
+    } finally { $synth.Dispose(); Close-Banner $banner }
 }
 
 function Invoke-Call([hashtable] $o) {
@@ -350,6 +392,7 @@ function Invoke-Doctor([hashtable] $o) {
         $ok = 1
     }
     Write-Output ("  {0,-11} System.Media.SoundPlayer — 볼륨을 못 받는다. --vol 은 TTS 에만 걸린다" -f '재생기')
+    Write-Output ("  {0,-11} System.Windows.Forms.NotifyIcon — 데스크톱 세션이 있어야 뜬다" -f '배너')
     Write-Output ("  {0,-11} {1}" -f '효과음', (Get-SoundsDir))
     Write-Output ("  {0,-11} 쓰지 않는다 (SAPI 가 볼륨·속도를 직접 받는다)" -f '캐시')
     Write-Output ("  {0,-11} vol={1} rate={2}" -f '기본값', $Defaults.Vol, $Defaults.Rate)
@@ -382,6 +425,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   -V, --vol N        0.0 ~ 1.0            (기본 0.6, 효과음에는 안 걸린다)
   -r, --rate N       배속, 1.0 이 보통     (기본 1.0)
   -t, --tone NAME    alert/call 의 효과음  (기본 ask)
+  -c, --channel NAME sound | visual | both (기본 sound)
   -n, --repeat N     정수 1 ~ 20          (기본 1, call 은 2)
   -g, --gap SEC      반복 사이 간격        (기본 0.4)
   -a, --async        기다리지 않고 반환 (훅에서 필수)
@@ -394,6 +438,7 @@ nautice — 에이전트가 사람의 주의를 끄는 알림 CLI
   nautice say "빌드가 끝났습니다"
   nautice alert -t warn -n 3 "디스크가 찼습니다"
   nautice play -V 0.3 ok
+  nautice call -c both              # 소리 + 알림 배너
 '@ | Write-Output
 }
 
@@ -404,6 +449,11 @@ Assert-Range $o.Vol    0   10 '--vol'
 Assert-Range $o.Rate   0.1 10 '--rate'
 Assert-Range $o.Repeat 1   20 '--repeat'
 Assert-Range $o.Gap    0   10 '--gap'
+
+if (-not $o.Channel) { $o.Channel = $Defaults.Channel }
+if ($o.Channel -cne 'sound' -and $o.Channel -cne 'visual' -and $o.Channel -cne 'both') {
+    Die "--channel 은 sound | visual | both 다: $($o.Channel)"
+}
 
 # Start-Process 는 -ArgumentList 의 원소를 공백으로 이어 붙이기만 하고 따옴표를
 # 붙이지 않는다. 윈도 보이스 이름에는 공백이 있어서(`Microsoft Heami Desktop`)

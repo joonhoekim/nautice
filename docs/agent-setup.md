@@ -1,34 +1,36 @@
-# 에이전트에 물리기
+# Wiring nautice to an agent
 
-`nautice` 는 **특정 에이전트에 묶이지 않는다.** 하는 일은 소리와 배너를 내는
-것뿐이고, 언제 부를지는 에이전트 쪽 설정이 정한다. 이 문서는 직접 고칠 때의
-참고다 — 보통은 [`README.md`](../README.md) 의 프롬프트를 에이전트에게 붙여
-넣으면 알아서 한다.
+English · [한국어](agent-setup.ko.md)
 
-## 두 가지 방식
+`nautice` is **not tied to any agent.** It only makes sounds and banners; when
+to call it is up to the agent's configuration. This page is for configuring it
+by hand — usually you paste the prompt from [`README.md`](../README.md) into
+your agent and it does the rest.
 
-| | 언제 울리나 | 어디에 적나 |
+## Two approaches
+
+| | When it fires | Where it goes |
 |---|---|---|
-| **훅** | 정해진 사건마다 무조건 | 에이전트의 설정 파일 |
-| **도구 안내** | 에이전트가 필요하다고 판단할 때 | 에이전트의 지침 파일 |
+| **Hook** | on every matching event, always | the agent's settings file |
+| **Tool note** | when the agent decides it is needed | the agent's instructions file |
 
-둘은 성격이 다르다. 훅은 빠뜨리지 않는 대신 성가실 수 있고, 도구 안내는
-조용한 대신 놓칠 수 있다. 같이 써도 된다.
+Hooks never miss but can be noisy; a tool note is quiet but can be forgotten.
+They can be combined.
 
-## 훅으로 걸 때 — 어디서나 같은 것
+## Hooks — the same everywhere
 
-- **`-a` 가 없으면 소리가 끝날 때까지 에이전트가 멈춘다.** 훅에서는 필수다.
-- `-q` 는 상태 줄을 찍지 않는다. 훅의 출력이 로그로 가므로 보통 같이 쓴다.
-- Windows 에서는 `nautice` 대신 `nautice.cmd` 로 적는다.
-- 자리를 비울 때가 많으면 `-c both --hold` 를 붙인다. 배너가 사람이 지울
-  때까지 남아서 돌아와서 볼 수 있다.
+- **Without `-a` the agent blocks until the sound ends.** Always use it in hooks.
+- `-q` suppresses the status line; hook output goes to a log, so use it too.
+- On Windows, write `nautice.cmd` instead of `nautice`.
+- If you are often away, add `-c both --hold`: the banner stays until dismissed.
 
-부르는 문구에 에이전트 이름을 넣고 싶으면 `NAUTICE_CALL_MESSAGE` 로 바꾼다.
-기본값은 중립이다 ([`cli.md`](cli.md)).
+To put your agent's name in the spoken text, set `NAUTICE_CALL_MESSAGE`; the
+default is neutral ([`cli.md`](cli.md)).
 
-## 예: Claude Code
+## Example: Claude Code
 
-`~/.claude/settings.json` (프로젝트에만 걸려면 저장소의 `.claude/settings.json`).
+`~/.claude/settings.json` (or the repository's `.claude/settings.json` for one
+project only).
 
 ```json
 {
@@ -37,30 +39,32 @@
       { "matcher": "", "hooks": [{ "type": "command", "command": "nautice call -a -q" }] }
     ],
     "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "nautice say -a -q '작업이 끝났습니다'" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "nautice say -a -q 'Task finished'" }] }
     ]
   }
 }
 ```
 
-`Notification` 은 사람을 기다릴 때(권한 요청, 입력 대기), `Stop` 은 한 턴을
-마쳤을 때다.
+`Notification` fires when the agent waits for you (permission request, input);
+`Stop` fires when it finishes a turn.
 
-## 다른 에이전트
+## Other agents
 
-설정 파일의 이름과 훅 이벤트의 이름은 에이전트마다 다르다. **에이전트 자신이
-자기 규약을 안다** — README 의 프롬프트를 주면 알아서 제자리에 넣는다.
-훅 같은 기능이 없는 에이전트면 지침 파일에만 적는다.
+Settings file names and hook events differ per agent, and **each agent knows its
+own conventions** — give it the README prompt and it puts things in the right
+place. An agent without hooks only gets the instructions-file note.
 
-지침 파일은 `AGENTS.md` 가 여러 에이전트가 함께 읽는 이름이고, 에이전트에
-따라 `CLAUDE.md` 처럼 자기 이름을 쓰기도 한다.
+`AGENTS.md` is the instructions file several agents read; some use their own
+name instead, such as `CLAUDE.md`.
 
 ```markdown
-## 사용 가능한 도구
+## Available tools
 
-- `nautice` — 사람을 소리로 부르는 알림 CLI. `nautice call -a -q` 로 부른다.
-  자동으로 울리지는 않는다 — 오래 걸리는 작업이 끝났거나 사람의 판단이
-  필요할 때만 쓴다. 배너까지 띄우려면 `-c both`, 지울 때까지 남기려면 `--hold`.
+- `nautice` — a notification CLI that calls the human with sound. Run
+  `nautice call -a -q`. It does not fire automatically — use it only when a long
+  task finishes or a human decision is needed. `-c both` adds a banner,
+  `--hold` keeps it until dismissed.
 ```
 
-**"자동으로 울리지 않는다" 를 적어야** 에이전트가 아무 때나 소리를 내지 않는다.
+**Stating that it "does not fire automatically"** keeps the agent from calling
+it at random moments.

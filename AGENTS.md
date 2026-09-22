@@ -1,96 +1,99 @@
 # AGENTS.md
 
-이 저장소에서 코드를 고칠 때 지키는 규칙.
+English · [한국어](AGENTS.ko.md)
 
-## 구현이 둘이다 (두 쌍이다)
+Rules for changing code in this repository.
 
-`bin/nautice`(bash, macOS·Linux)와 `bin/nautice.ps1`(Windows)은 **같은 동작을
-서로 다른 언어로 쓴 것**이다. 한쪽만 고치면 두 OS 의 동작이 갈라지고, 그걸
-알아차리는 사람은 반대쪽 OS 를 쓰는 사람뿐이다.
+## Two implementations (two pairs)
 
-동작을 바꿀 때는 이 순서로 한다.
+`bin/nautice` (bash, macOS and Linux) and `bin/nautice.ps1` (Windows) are **the
+same behaviour written in two languages.** Change one alone and the OSes
+diverge — noticed only by whoever uses the other OS.
 
-1. `docs/cli.md` 를 먼저 고친다 — 계약의 단일 출처다.
-2. 양쪽 구현을 그에 맞춘다.
-3. `./test/conformance` 를 돌린다.
+To change behaviour:
 
-소리는 비교할 수 없으므로 적합성 테스트는 `--plan` 이 찍는 해석 결과를 본다.
-새 옵션을 더했으면 `--plan` 출력과 `plan_case` 를 같이 더한다. 안 그러면 그
-옵션은 검사 대상 밖이다.
+1. Update `docs/cli.md` first — it is the single source of truth.
+2. Bring both implementations in line.
+3. Run `./test/conformance`.
 
-OS 백엔드의 한계 때문에 정말 갈라져야 하는 것은 `docs/cli.md` 의 "플랫폼 차이"
-에 적는다. 거기 적히지 않은 차이는 버그다.
+Sound cannot be compared, so the conformance test compares what `--plan`
+prints. A new option needs both a `--plan` field and a `plan_case`; otherwise it
+is outside the test.
 
-**인스톨러도 같은 쌍이다.** `install.sh` 와 `install.ps1` 은 `docs/install.md` 를
-단일 출처로 하는 두 번째 이중 구현이다. 여기서 갈라짐을 막는 방법은 하나다 —
-**인스톨러를 멍청하게 두는 것.** 받기 → 검증 → 풀기 → 복사 → `doctor` 가 전부고
-판단을 넣지 않는다. 판단이 늘수록 두 구현이 갈라진다. 끝까지 도는지는
-`ci.yml` 의 `설치` 잡이 세 OS 에서 본다.
+Differences that backends truly force go under "Platform differences" in
+`docs/cli.md`. Any difference not listed there is a bug.
 
-## 검증
+**The installers are the second pair.** `install.sh` and `install.ps1` implement
+`docs/install.md`. The one defence against divergence there is **keeping the
+installers dumb**: download → verify → extract → copy → `doctor`, no decisions.
+The `install` job in `ci.yml` runs them end to end on all three OSes.
+
+## Verification
 
 ```sh
-./test/conformance            # 두 구현 비교. pwsh 가 없으면 bash 쪽만 본다
-/bin/bash ./test/conformance  # macOS 의 bash 3.2 로 한 번 더
-nix build .#nautice           # shellcheck 까지 돈다
+./test/conformance            # compares both; without pwsh only bash runs
+/bin/bash ./test/conformance  # again under macOS's bash 3.2
+nix build .#nautice           # includes shellcheck
 
-python3 tools/mkdist          # 릴리스 자산을 dist/ 에 만든다
+python3 tools/mkdist          # builds release assets in dist/
 NAUTICE_PREFIX=/tmp/p NAUTICE_ARCHIVE=dist/nautice-unix.tar.gz bash install.sh
 ```
 
-`.github/workflows/ci.yml` 이 이 둘을 세 OS 러너에서 돌린다. Windows 실기에서
-`System.Speech` 가 실제로 불리는 자리는 거기뿐이다.
+`.github/workflows/ci.yml` runs these on all three OS runners. It is the only
+place `System.Speech` actually runs on real Windows.
 
-실기가 없는 OS 도 손에서 여기까지는 확인할 수 있다.
+Without the other OS at hand you can still get this far:
 
 ```sh
-# Windows 구현을 macOS·Linux 에서 (System.Speech 는 안 되지만 나머지는 된다)
+# The Windows implementation on macOS/Linux (all but System.Speech works)
 nix shell nixpkgs#powershell -c pwsh -NoProfile -File bin/nautice.ps1 doctor
 
-# Linux 구현을 macOS 에서 (오디오 장치가 없어 재생만 실패한다)
+# The Linux implementation on macOS (only playback fails: no audio device)
 docker run --rm -v "$PWD:/w:ro" -w /w debian:stable-slim bash -c \
   'apt-get -qq update && apt-get -qq install -y espeak-ng alsa-utils && ./bin/nautice doctor'
 ```
 
-`say -v NoSuchVoice` 가 exit 0 으로 엉뚱한 보이스를 쓰는 것처럼, 이 바닥의
-실패는 대개 조용하다. 무엇이 실제로 났는지 귀로 확인하지 않았으면 "된다" 고
-적지 않는다.
+Failures here are usually silent — `say -v NoSuchVoice` exits 0 with the wrong
+voice. Do not write "works" unless you heard what actually played.
 
-## 손대면 깨지는 것
+## Things that break when touched
 
-- **인스톨러는 아무것도 물을 수 없다.** `curl | bash` 와 `irm | iex` 는 stdin 이
-  파이프라 `read` 가 스크립트 자신의 남은 본문을 읽어 먹는다. 고를 것은 전부
-  환경변수로 받는다.
-- **설치는 개별 파일이 아니라 아카이브로 받는다.** 파일을 하나씩 받아 쓰면
-  아래의 BOM·CRLF 를 보존할 책임이 인스톨러로 넘어오고, PowerShell 의 `irm` 은
-  응답을 문자열로 디코드하며 BOM 을 떼어낸다. `.wav` 도 같이 상한다.
-- **`bin/nautice.ps1` 은 UTF-8 BOM 이어야 한다.** 없으면 PowerShell 5.1 이 시스템
-  코드페이지로 읽어 한글 문구가 깨진다. 편집기가 BOM 을 떼지 않는지 확인한다.
-  `.gitattributes` 가 `*.ps1` 을 CRLF 로 고정하는 것도 같은 이유다.
-- **`share/sounds/*.wav` 를 직접 편집하지 않는다.** `tools/gen-sounds.py` 가
-  만든다. 소리를 바꾸려면 생성기의 `TONES` 를 고치고 다시 돌린다.
-- **셸에서 한글을 정규식 범위로 찾지 않는다.** `LC_CTYPE` 이 `C` 면 `[가-힣]` 이
-  **모든 문자에 매치해서** 영어 문장도 한국어 보이스로 나간다 — cron·systemd·
-  컨테이너처럼 로캘이 없는 곳에서 조용히 그렇게 된다. 범위를 여러 개 묶으면
-  (`[가-힣ㄱ-ㅎ]`) en_US 콜레이션에서 "invalid character range" 로 죽기까지 한다.
-  `has_hangul` 처럼 UTF-8 바이트로 본다.
-- **숫자를 문화권 타는 API 로 다루지 않는다.** 소수점이 쉼표인 곳에서
-  `[double]::TryParse("0.4")` 는 조용히 `4` 를, `printf '%.3f' 0.4` 는 `0,000` 을
-  내놓는다. 양쪽 다 시작할 때 문화권을 떼어내고(`LC_NUMERIC=C`,
-  `InvariantCulture`) 받아들일 문법은 정규식으로 못박아 뒀다. 되돌리지 않는다.
-- **PowerShell 의 `1..0` 은 빈 범위가 아니라 `@(1, 0)` 이다.** 배열을 잘라낼 때
-  개수가 1 이면 범위를 벗어난다.
-- **macOS 의 `/bin/bash` 는 3.2 다.** `case` 를 `$( )` 안에 두면 거기서만
-  "syntax error near unexpected token `;;`" 로 죽는다. 연상 배열(`declare -A`)도
-  없다. 개발 기계의 bash 가 nix·homebrew 의 5.x 면 로컬에서는 멀쩡히 돌아서
-  안 보인다 — `/bin/bash` 로 한 번 더 돌린다.
-- **`$(cmd || true)` 로 `die` 를 못 막는다.** `exit` 가 서브셸을 그 자리에서
-  끝내서 `||` 에 도달하지 못한다. 치환 바깥에서 받는다.
+- **Installers cannot prompt.** Under `curl | bash` and `irm | iex` stdin is the
+  pipe; `read` consumes the rest of the script. Take every choice from
+  environment variables.
+- **Install from an archive, never loose files.** Writing files one by one makes
+  the installer responsible for the BOM and CRLF below, and PowerShell's `irm`
+  decodes responses to strings, dropping the BOM. The `.wav` files get damaged too.
+- **`bin/nautice.ps1` must be UTF-8 with a BOM.** Without it PowerShell 5.1 reads
+  it in the system code page and Korean text breaks. Check your editor keeps the
+  BOM. `.gitattributes` pins `*.ps1` to CRLF for the same reason.
+- **Do not edit `share/sounds/*.wav` by hand.** `tools/gen-sounds.py` generates
+  them; change its `TONES` and rerun it.
+- **Do not match scripts with regex ranges in shell.** With `LC_CTYPE=C`,
+  `[가-힣]` **matches every character**, so English text gets a Korean voice —
+  silently, wherever there is no locale (cron, systemd, containers). Combining
+  ranges (`[가-힣ㄱ-ㅎ]`) even dies with "invalid character range" under en_US
+  collation. Read UTF-8 bytes, as `detect_lang` does.
+- **Do not handle numbers with culture-sensitive APIs.** Where the decimal mark
+  is a comma, `[double]::TryParse("0.4")` quietly returns `4` and
+  `printf '%.3f' 0.4` prints `0,000`. Both sides strip the culture at startup
+  (`LC_NUMERIC=C`, `InvariantCulture`) and pin the accepted syntax with a regex.
+  Do not undo that.
+- **PowerShell's `1..0` is not an empty range but `@(1, 0)`.** Slicing an array
+  of one element with it goes out of range.
+- **macOS's `/bin/bash` is 3.2.** A `case` inside `$( )` dies there with "syntax
+  error near unexpected token `;;`", and there are no associative arrays
+  (`declare -A`). With a 5.x bash from nix or Homebrew it works locally, so run
+  the tests under `/bin/bash` too.
+- **`$(cmd || true)` does not catch `die`.** `exit` ends the subshell before `||`
+  is reached; handle it outside the substitution.
 
-## 커밋 메시지
+## Commit messages
 
-**제목 1줄, 본문 3줄 이하.** 본문이 길어지면 그건 커밋이 아니라 주석이나
-`docs/` 로 갈 내용이다.
+**One subject line, a body of at most three lines.** A longer body belongs in a
+comment or in `docs/`.
+
+Commit messages are written in Korean, in the declarative form (`~한다`):
 
 ```
 type(scope): 무엇을 하는지 한국어 평서형으로 (~한다)
@@ -98,32 +101,39 @@ type(scope): 무엇을 하는지 한국어 평서형으로 (~한다)
 왜 필요했는지와 무엇이 바뀌는지. 세 줄을 넘기지 않는다.
 ```
 
-- `type` 은 `feat` / `fix` / `refactor` / `chore` / `docs` / `test` 중 하나.
-- `scope` 는 건드린 자리(`bash`, `windows`, `sounds`, `cli`, `nix`…).
-- 제목은 명사구가 아니라 **동작**으로 쓴다 — "보이스 검증" 이 아니라
-  "없는 보이스를 거부한다".
-- 한 커밋은 한 가지 일만 한다. 양쪽 구현을 같은 이유로 고쳤으면 그건 한 가지
-  일이니 한 커밋에 넣는다 — 갈라 놓으면 중간 커밋에서 계약이 깨진다.
-- 생성 도구를 언급하지 않는다. 트레일러도 붙이지 않는다.
+- `type` is one of `feat` / `fix` / `refactor` / `chore` / `docs` / `test`.
+- `scope` is the area touched (`bash`, `windows`, `sounds`, `cli`, `nix`, …).
+- The subject describes an **action**, not a noun phrase — "reject unknown
+  voices", not "voice validation".
+- One commit, one change. Fixing both implementations for the same reason is
+  one change and one commit — splitting it leaves a commit that breaks the
+  contract.
+- Never mention generation tools, and add no trailers.
 
-## 주석
+## Comments
 
-**메커니즘과 결과는 남기고, 사건 서술은 뺀다.** 주석은 다음에 이 코드를 읽는
-사람을 위한 것이지 무슨 일이 있었는지에 대한 기록이 아니다.
+**Keep mechanism and consequence; drop narrative.** Comments are for the next
+reader of the code, not a record of what happened.
 
-남겨야 하는 것:
+Keep:
 
-- 이 줄이 없으면 무엇이 깨지는지, 그 증상이 어떻게 보이는지. 특히 **조용히
-  실패하는** 것은 반드시 적는다.
-- 왜 더 뻔한 방법을 안 썼는지.
-- 상류의 사실과 그 출처.
-- 값을 실측했으면 그 수치와 측정 조건 (`afplay` 기동 0.95초처럼).
+- What breaks without this line, and what the symptom looks like. Always
+  document failures that are **silent**.
+- Why the more obvious approach was not used.
+- Upstream facts and where they come from.
+- Measured values with their conditions (e.g. `afplay` startup of 0.95 s).
 
-빼야 하는 것: "예전에는 X 였다" 같은 지운 코드의 부고, 커밋 하나에서만 의미
-있는 경위, 사건 서술.
+Drop: obituaries of removed code ("this used to be X"), history that matters to
+a single commit, storytelling.
 
-## 문서
+Comments and documentation are written in English.
 
-`README.md` 는 쓰는 사람을 위한 것이고, `docs/cli.md` 는 구현하는 사람을 위한
-것이다. 옵션의 정확한 범위와 단위 환산은 `docs/cli.md` 에만 적고 README 는
-그쪽을 가리킨다. 두 군데 적으면 한 군데가 낡는다.
+## Documentation
+
+`README.md` is for users; `docs/cli.md` is for implementers. Exact option ranges
+and unit conversions live only in `docs/cli.md`, and the README points there —
+written twice, one copy goes stale.
+
+The English documents are authoritative. The `*.ko.md` files are Korean
+translations; update them in the same change when you can. Where they disagree,
+the English document is right.

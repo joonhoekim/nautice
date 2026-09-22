@@ -288,7 +288,7 @@ fi
 # docs/cli.md states call's default message verbatim; code and doc must agree.
 if (( have_bash || have_ps )); then
   # shellcheck disable=SC2016  # the pattern matches literal Markdown backticks
-  doc_call=$(sed -n 's/^.*기본 문구는 `\([^`]*\)`.*$/\1/p' docs/cli.md | head -1)
+  doc_call=$(sed -n 's/^`call` speaks `\([^`]*\)` by default.*$/\1/p' docs/cli.md | head -1)
   if (( have_bash )); then got=$(run_bash call --plan | sed -n 's/^text=//p')
   else                      got=$(run_ps   call --plan | sed -n 's/^text=//p'); fi
   if [[ -n $doc_call && $doc_call == "$got" ]]; then ok "call 기본 문구 ($got)"
@@ -298,7 +298,7 @@ fi
 # The README's agent prompt names options. A renamed option would have agents
 # write broken config, noticed only afterwards.
 echo "README 의 에이전트 안내가 부르는 옵션이 있는가"
-readme_opts=$(sed -n '/^## 에이전트에 물리기/,/^## 구조/p' README.md \
+readme_opts=$(sed -n '/^## Wiring it to an agent/,/^## Layout/p' README.md \
   | grep -oE '`--?[a-z][a-z-]*' | tr -d '`' | sort -u)
 [[ -n $readme_opts ]] || bad 'README 안내' '옵션을 하나도 못 읽었다 (절 제목이 바뀌었나)'
 for opt in $readme_opts; do
@@ -314,7 +314,7 @@ echo
 # nobody documents is never found.
 echo "계약의 이름표와 번들 파일이 맞는가"
 # shellcheck disable=SC2016  # the pattern matches literal Markdown backticks
-doc_tones=$(grep -F 'share/sounds/<이름>.wav' docs/cli.md | grep -oE '`[a-z]+`' | tr -d '`' | sort)
+doc_tones=$(grep -F 'share/sounds/<name>.wav' docs/cli.md | grep -oE '`[a-z]+`' | tr -d '`' | sort)
 wav_tones=$(find share/sounds -name '*.wav' -exec basename {} .wav \; | sort)
 if [[ $doc_tones == "$wav_tones" && -n $doc_tones ]]; then
   ok "$(printf '%s' "$doc_tones" | tr '\n' ' ')"

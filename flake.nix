@@ -33,7 +33,7 @@
             doCheck = true;
             nativeCheckInputs = [ pkgs.shellcheck ];
             checkPhase = ''
-              shellcheck bin/nautice test/conformance
+              shellcheck bin/nautice test/conformance install.sh
             '';
 
             installPhase = ''

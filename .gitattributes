@@ -7,4 +7,6 @@ test/*      text eol=lf
 *.md        text eol=lf
 *.nix       text eol=lf
 *.py        text eol=lf
+install.sh  text eol=lf
+tools/*     text eol=lf
 *.wav       binary

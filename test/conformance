@@ -80,6 +80,24 @@ plan_case '영어면 en'           say "build finished"
 # e 로 끝나는 바이트면 hex 를 붙여 볼 때 ec 가 생겨 한국어로 넘어가던 자리다.
 plan_case '악센트 라틴은 en'    say "Renée finished the nüance"
 plan_case '섞이면 ko'           say "build 가 끝났습니다"
+
+# 문구를 인자가 아니라 파이프로 받는 자리. Windows 는 콘솔 코드페이지로 디코드
+# 하면 한글이 쓰레기가 되므로 stdin 을 UTF-8 로 직접 읽는다 — 그게 살아 있는지
+# 본다. 훅이 문구를 파이프로 넘기는 쓰임이 여기에 걸린다.
+stdin_case() {
+  local name=$1 text=$2; shift 2
+  if (( have_bash == 0 || have_ps == 0 )); then
+    printf '  \033[33mskip\033[0m %s (%s)\n' "$name" "$SKIP_WHY"; return
+  fi
+  local a b
+  a=$(printf '%s' "$text" | run_bash "$@" --plan | grep -E "$SHARED_FIELDS" | sort)
+  b=$(printf '%s' "$text" | run_ps   "$@" --plan | grep -E "$SHARED_FIELDS" | sort)
+  if [[ $a == "$b" ]]; then ok "$name"
+  else bad "$name" "$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | head -8)"; fi
+}
+stdin_case 'stdin 한글'         '빌드가 끝났습니다' say
+stdin_case 'stdin 영어'         'build finished'    say
+stdin_case 'stdin alert'        '디스크가 찼습니다' alert -t warn
 echo
 
 # ── 환산식 ──────────────────────────────────────────────────────────────────
@@ -167,6 +185,34 @@ for opt in --voice --vol --rate --tone --repeat --gap --async --quiet; do
   (( have_ps ))   && ! run_ps   --help | grep -q -- "$opt" && miss="${miss:+$miss, }ps"
   if [[ -n $miss ]]; then bad "$opt" "빠진 곳: $miss"; else ok "$opt"; fi
 done
+echo
+
+# ── doctor 와 list ──────────────────────────────────────────────────────────
+echo "doctor 와 list 가 계약대로 말하는가"
+# doctor 의 종료코드는 그 기계에 무엇이 깔렸느냐로 갈리므로 보지 않는다. 첫 줄은
+# 버전과 어느 백엔드로 도는지를 밝히는 유일한 줄이라 모양이 고정돼야 한다.
+doctor_head='^nautice [0-9]+\.[0-9]+\.[0-9]+ \((macos|linux|windows)\)$'
+if (( have_bash )); then
+  got=$(run_bash doctor | head -1)
+  if [[ $got =~ $doctor_head ]]; then ok "bash doctor 머리글"
+  else bad "bash doctor 머리글" "'$got'"; fi
+fi
+if (( have_ps )); then
+  got=$(run_ps doctor | head -1)
+  if [[ $got =~ $doctor_head ]]; then ok "ps doctor 머리글"
+  else bad "ps doctor 머리글" "'$got'"; fi
+fi
+# 번들 효과음의 이름표는 세 OS 가 같아야 한다 — 알림의 뜻이 기계마다 흔들리면
+# 안 되기 때문이다. 그 뒤에 붙는 OS 기본 사운드는 기계마다 다르니 뺀다.
+bundled() { sed -n '/^번들/,/^$/p' | sed -n 's/^  //p' | sort; }
+if (( have_bash && have_ps )); then
+  a=$(run_bash list sounds | bundled)
+  b=$(run_ps   list sounds | bundled)
+  if [[ $a == "$b" && -n $a ]]; then ok "list sounds 번들 이름표"
+  else bad "list sounds 번들 이름표" "$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | head -8)"; fi
+else
+  printf '  \033[33mskip\033[0m %s (%s)\n' "list sounds 번들 이름표" "$SKIP_WHY"
+fi
 echo
 
 # ── 버전 ────────────────────────────────────────────────────────────────────

@@ -169,5 +169,20 @@ for opt in --voice --vol --rate --tone --repeat --gap --async --quiet; do
 done
 echo
 
+# ── 계약이 구현의 환경변수를 다 적고 있는가 ─────────────────────────────────
+# 한쪽에만 적힌 변수는 아무도 못 찾는다. 파일만 읽으므로 구현이 하나뿐인
+# 기계에서도 돈다.
+echo "계약이 환경변수를 다 적는가"
+impl_envs=$(grep -ohE 'NAUTICE_[A-Z_]+' "$BASH_IMPL" "$PS_IMPL" | sort -u)
+doc_envs=$(grep -ohE 'NAUTICE_[A-Z_]+' docs/cli.md | sort -u)
+for v in $impl_envs; do
+  if grep -qF "$v" docs/cli.md; then ok "$v"; else bad "$v" "구현이 읽는데 docs/cli.md 에 없다"; fi
+done
+for v in $doc_envs; do
+  printf '%s\n' "$impl_envs" | grep -qxF "$v" \
+    || bad "$v" "docs/cli.md 에 있는데 어느 구현도 안 읽는다"
+done
+echo
+
 printf '%d 통과, %d 실패\n' "$pass" "$fail"
 (( fail == 0 ))

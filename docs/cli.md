@@ -104,5 +104,6 @@ Windows SAPI 의 `Rate` 는 −10 – 10 이고 속도는 대략 `3^(Rate/10)` �
 |---|---|
 | `NAUTICE_VOICE` `NAUTICE_VOICE_KO` `NAUTICE_VOICE_EN` | 기본 보이스 |
 | `NAUTICE_VOL` `NAUTICE_RATE` | 기본 볼륨·배속 |
-| `NAUTICE_CACHE` | 렌더 캐시 위치 |
+| `NAUTICE_SOUNDS` | 번들 효과음 디렉터리. 비면 실행 파일 옆의 `../share/sounds` 를 찾는다 |
+| `NAUTICE_CACHE` | 렌더 캐시 위치 (bash 쪽만 쓴다) |
 | `NAUTICE_PIPER_MODEL` | Linux 에서 쓸 piper `.onnx` 경로 |

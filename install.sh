@@ -2,7 +2,7 @@
 # Installs nautice (macOS, Linux). Windows: install.ps1.
 # docs/install.md is the contract for both; change them together.
 #
-#   curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | bash
+#   curl -fsSL https://github.com/joonhoekim/nautice/releases/latest/download/install.sh | bash
 set -euo pipefail
 
 REPO=joonhoekim/nautice

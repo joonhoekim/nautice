@@ -65,8 +65,12 @@ voice. Do not write "works" unless you heard what actually played.
   the installer responsible for the BOM and CRLF below, and PowerShell's `irm`
   decodes responses to strings, dropping the BOM. The `.wav` files get damaged too.
 - **`bin/nautice.ps1` must be UTF-8 with a BOM.** Without it PowerShell 5.1 reads
-  it in the system code page and Korean text breaks. Check your editor keeps the
-  BOM. `.gitattributes` pins `*.ps1` to CRLF for the same reason.
+  the file in the system code page, so any non-ASCII character is garbled.
+  Check your editor keeps the BOM. `.gitattributes` pins `*.ps1` to CRLF.
+- **`install.ps1` must be ASCII without a BOM** — the opposite rule. It is
+  fetched with `irm` from a release asset served as `application/octet-stream`,
+  with no charset to decode by; plain ASCII reads the same under any decoding.
+  The conformance test checks it.
 - **Do not edit `share/sounds/*.wav` by hand.** `tools/gen-sounds.py` generates
   them; change its `TONES` and rerun it.
 - **Do not match scripts with regex ranges in shell.** With `LC_CTYPE=C`,

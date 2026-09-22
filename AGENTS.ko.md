@@ -69,8 +69,11 @@ docker run --rm -v "$PWD:/w:ro" -w /w debian:stable-slim bash -c \
   아래의 BOM·CRLF 를 보존할 책임이 인스톨러로 넘어오고, PowerShell 의 `irm` 은
   응답을 문자열로 디코드하며 BOM 을 떼어낸다. `.wav` 도 같이 상한다.
 - **`bin/nautice.ps1` 은 UTF-8 BOM 이어야 한다.** 없으면 PowerShell 5.1 이 시스템
-  코드페이지로 읽어 한글 문구가 깨진다. 편집기가 BOM 을 떼지 않는지 확인한다.
-  `.gitattributes` 가 `*.ps1` 을 CRLF 로 고정하는 것도 같은 이유다.
+  코드페이지로 읽어 비ASCII 문자가 깨진다. 편집기가 BOM 을 떼지 않는지 확인한다.
+  `.gitattributes` 가 `*.ps1` 을 CRLF 로 고정한다.
+- **`install.ps1` 은 BOM 없는 ASCII 여야 한다** — 반대 규칙이다. 릴리스 자산을
+  `irm` 으로 받는데 `application/octet-stream` 으로 내려와 기댈 문자셋이 없다.
+  순수 ASCII 는 어떻게 읽어도 같다. 적합성 테스트가 본다.
 - **`share/sounds/*.wav` 를 직접 편집하지 않는다.** `tools/gen-sounds.py` 가
   만든다. 소리를 바꾸려면 생성기의 `TONES` 를 고치고 다시 돌린다.
 - **셸에서 한글을 정규식 범위로 찾지 않는다.** `LC_CTYPE` 이 `C` 면 `[가-힣]` 이

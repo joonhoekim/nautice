@@ -3,7 +3,9 @@
 
 Files go in byte for byte (nautice.ps1 needs its UTF-8 BOM and CRLF). Output is
 reproducible — fixed mtimes, fixed gzip header — so SHA256SUMS can be re-checked.
+The installers ship as assets too, so script and payload come from one version.
 """
+import shutil
 import gzip
 import hashlib
 import io
@@ -28,6 +30,7 @@ COMMON = (
     + [(f"share/nautice/sounds/{p.name}", p, False) for p in SOUNDS]
     + [("LICENSE", ROOT / "LICENSE", False)]
 )
+INSTALLERS = [ROOT / "install.sh", ROOT / "install.ps1"]
 WINDOWS_ONLY = [
     ("bin/nautice.ps1", ROOT / "bin" / "nautice.ps1", False),
     ("bin/nautice.cmd", ROOT / "bin" / "nautice.cmd", False),
@@ -98,7 +101,7 @@ def main():
     ver = version()
     root = f"nautice-{ver}"
 
-    for name, src, _ in COMMON + WINDOWS_ONLY:
+    for src in [src for _, src, _ in COMMON + WINDOWS_ONLY] + INSTALLERS:
         if not src.is_file():
             sys.exit(f"mkdist: missing {src}")
 
@@ -110,9 +113,14 @@ def main():
     zip_path = DIST / "nautice-windows.zip"
     write_tar(tar_path, root, COMMON)
     write_zip(zip_path, root, COMMON + WINDOWS_ONLY)
+    copies = []
+    for src in INSTALLERS:
+        dst = DIST / src.name
+        shutil.copyfile(src, dst)  # bytes as in the working tree (CRLF for .ps1)
+        copies.append(dst)
 
     lines = []
-    for p in (tar_path, zip_path):
+    for p in [tar_path, zip_path] + copies:
         digest = hashlib.sha256(p.read_bytes()).hexdigest()
         # The format both sha256sum -c and shasum -a 256 -c accept.
         lines.append(f"{digest}  {p.name}\n")

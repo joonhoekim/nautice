@@ -15,11 +15,11 @@
 ## 한 줄 설치
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | bash
+curl -fsSL https://github.com/joonhoekim/nautice/releases/latest/download/install.sh | bash
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 | iex
 ```
 
 ## 환경변수
@@ -58,11 +58,24 @@ Windows 아카이브에는 `bin/nautice`(bash) 도 들어간다. Git Bash 에서
 |---|---|
 | `nautice-unix.tar.gz` | `bin/nautice` + 효과음 + `LICENSE` |
 | `nautice-windows.zip` | 위 + `nautice.ps1` · `nautice.cmd` |
-| `SHA256SUMS` | 두 아카이브의 해시 |
+| `install.sh` · `install.ps1` | 인스톨러 자신 |
+| `SHA256SUMS` | 위 전부의 해시 |
 
 이름에 버전을 넣지 않는다. `releases/latest/download/<이름>` 이 그대로 서므로
 `latest` 를 풀려고 API 를 부를 필요가 없다. 버전은 아카이브 안의 최상위
 디렉터리 이름(`nautice-0.4.0/`)이 들고 있다.
+
+### 왜 인스톨러를 릴리스에서 받는가
+
+`install.sh` 는 `main` 에서, 아카이브는 최신 릴리스에서 받으면 인스톨러가 바뀌고
+다음 릴리스가 나가기 전 사이에 둘이 어긋날 수 있다. 인스톨러도 릴리스 자산으로
+올리면 스크립트와 알맹이가 늘 같은 판이다. 버전을 고정하려면 그 릴리스의
+스크립트(`releases/download/v0.4.0/install.sh`)를 받고 `NAUTICE_VERSION` 도 맞춘다.
+
+**`install.ps1` 은 BOM 없는 ASCII 여야 한다.** 릴리스 자산은
+`application/octet-stream` 으로 내려와서 `irm` 이 기댈 문자셋이 없다. Windows
+PowerShell 5.1 은 이를 Latin-1 로 읽을 수 있고, 그러면 BOM 이 첫 줄 앞의 `ï»¿` 가
+되어 `iex` 가 돌리지 못한다. 순수 ASCII 는 어떻게 읽어도 같다. 적합성 테스트가 본다.
 
 ### 왜 개별 파일이 아니라 아카이브인가
 
@@ -110,12 +123,12 @@ GitHub 이 자동 생성하는 `archive/*.tar.gz` 를 쓰지 않는 것은 그 �
 ## 지우기
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | NAUTICE_UNINSTALL=1 bash
+curl -fsSL https://github.com/joonhoekim/nautice/releases/latest/download/install.sh | NAUTICE_UNINSTALL=1 bash
 NAUTICE_UNINSTALL=1 bash install.sh    # 레포에서 바로
 ```
 
 ```powershell
-$env:NAUTICE_UNINSTALL = '1'; irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+$env:NAUTICE_UNINSTALL = '1'; irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 | iex
 ```
 
 PowerShell 의 `$env:` 는 **그 세션 내내 남는다.** 같은 창에서 설치 한 줄을 다시

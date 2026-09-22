@@ -13,11 +13,11 @@ Installers stay as dumb as possible: **download → verify → extract → copy 
 ## One-line install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | bash
+curl -fsSL https://github.com/joonhoekim/nautice/releases/latest/download/install.sh | bash
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 | iex
 ```
 
 ## Environment variables
@@ -57,11 +57,26 @@ Built by `tools/mkdist` and uploaded by `release.yml` when a tag is pushed.
 |---|---|
 | `nautice-unix.tar.gz` | `bin/nautice` + sounds + `LICENSE` |
 | `nautice-windows.zip` | the above + `nautice.ps1` and `nautice.cmd` |
-| `SHA256SUMS` | hashes of both archives |
+| `install.sh` · `install.ps1` | the installers themselves |
+| `SHA256SUMS` | hashes of all of the above |
 
 Names carry no version, so `releases/latest/download/<name>` works and `latest`
 needs no API call. The version is in the archive's top directory
 (`nautice-0.4.0/`).
+
+### Why the installers come from the release
+
+Fetching `install.sh` from `main` and the archive from the latest release lets
+the two drift apart whenever the installer changes before the next release.
+Shipping the installers as release assets keeps script and payload from the
+same version. For a fixed version, fetch the script from that release —
+`releases/download/v0.4.0/install.sh` — and set `NAUTICE_VERSION` to match.
+
+**`install.ps1` must stay ASCII without a BOM.** Release assets are served as
+`application/octet-stream`, and `irm` has no charset to go by; Windows
+PowerShell 5.1 can decode the bytes as Latin-1, turning a BOM into `ï»¿` in
+front of the first line, which `iex` cannot run. Pure ASCII reads the same
+under any decoding. The conformance test checks it.
 
 ### Why an archive, not individual files
 
@@ -109,12 +124,12 @@ failed install. `nautice --version` failing is — exit 1.
 ## Uninstall
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | NAUTICE_UNINSTALL=1 bash
+curl -fsSL https://github.com/joonhoekim/nautice/releases/latest/download/install.sh | NAUTICE_UNINSTALL=1 bash
 NAUTICE_UNINSTALL=1 bash install.sh    # from a checkout
 ```
 
 ```powershell
-$env:NAUTICE_UNINSTALL = '1'; irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+$env:NAUTICE_UNINSTALL = '1'; irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 | iex
 ```
 
 PowerShell's `$env:` **persists for the whole session**: running the install
@@ -135,4 +150,6 @@ NAUTICE_PREFIX=/tmp/p NAUTICE_ARCHIVE=dist/nautice-unix.tar.gz bash install.sh
 
 This is why `NAUTICE_ARCHIVE` exists: without a release, CI still runs the real
 install path end to end on all three OSes for every PR — the `install` job in
-`ci.yml`.
+`ci.yml`. It serves the built assets over local HTTP as
+`application/octet-stream`, like GitHub does, and pipes the installer from there
+(`curl | bash`, and `irm | iex` under PowerShell 5.1).

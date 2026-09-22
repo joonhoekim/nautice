@@ -40,13 +40,13 @@ options, one `--channel` to choose.
 **macOS · Linux**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | bash
+curl -fsSL https://github.com/joonhoekim/nautice/releases/latest/download/install.sh | bash
 ```
 
 **Windows**
 
 ```powershell
-irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 | iex
 ```
 
 Installs into `~/.local` (`%LOCALAPPDATA%\Programs\nautice` on Windows) and
@@ -61,11 +61,11 @@ In Git Bash, `nautice` hands over to `nautice.ps1`, so one name works everywhere
 Run the same script with `NAUTICE_UNINSTALL=1`.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | NAUTICE_UNINSTALL=1 bash
+curl -fsSL https://github.com/joonhoekim/nautice/releases/latest/download/install.sh | NAUTICE_UNINSTALL=1 bash
 ```
 
 ```powershell
-$env:NAUTICE_UNINSTALL = '1'; irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+$env:NAUTICE_UNINSTALL = '1'; irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 | iex
 ```
 
 This removes the installed files and `share/nautice`; on Windows it also removes

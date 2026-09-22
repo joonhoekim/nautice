@@ -284,6 +284,15 @@ else
 fi
 echo
 
+# ── install.ps1 is plain ASCII ──────────────────────────────────────────────
+# It is piped through irm from an octet-stream release asset with no charset;
+# a BOM or any byte >= 0x80 may be decoded differently by PowerShell 5.1.
+echo "install.ps1 is ASCII without a BOM"
+high=$(od -An -tx1 -v install.ps1 | tr ' ' '\n' | grep -cE '^[89a-f][0-9a-f]$')
+if (( high == 0 )); then ok "install.ps1 is ASCII"
+else bad "install.ps1" "$high bytes >= 0x80 (BOM or non-ASCII)"; fi
+echo
+
 # ── Version ─────────────────────────────────────────────────────────────────
 # The version lives in three files; bumping one splits --version from the nix
 # package. Read from files, so all three are checked on any machine.

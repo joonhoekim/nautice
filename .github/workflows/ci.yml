@@ -64,12 +64,17 @@ jobs:
         shell: bash
         run: python3 tools/mkdist
 
+      # Assets are served as application/octet-stream like GitHub release assets
+      # and piped the way the README tells users to. The server starts inside
+      # the step that uses it; background processes need not outlive a step.
       - name: Install (unix)
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
-          NAUTICE_PREFIX="$RUNNER_TEMP/p" NAUTICE_ARCHIVE=dist/nautice-unix.tar.gz \
-            bash install.sh
+          python3 test/serve dist 8765 &
+          for _ in $(seq 20); do curl -fsS -o /dev/null http://127.0.0.1:8765/SHA256SUMS && break; sleep 0.5; done
+          curl -fsSL http://127.0.0.1:8765/install.sh \
+            | NAUTICE_PREFIX="$RUNNER_TEMP/p" NAUTICE_ARCHIVE=http://127.0.0.1:8765/nautice-unix.tar.gz bash
           "$RUNNER_TEMP/p/bin/nautice" --version
 
       - name: Uninstall (unix)
@@ -79,15 +84,20 @@ jobs:
           NAUTICE_PREFIX="$RUNNER_TEMP/p" NAUTICE_UNINSTALL=1 bash install.sh
           test ! -e "$RUNNER_TEMP/p/bin/nautice" || { echo "not removed" >&2; exit 1; }
 
-      # PowerShell 5.1, as nautice.cmd uses: an installed nautice.ps1 that lost
-      # its UTF-8 BOM shows garbled Korean here.
+      # Windows PowerShell 5.1 running irm | iex on an octet-stream response: the
+      # one place a BOM or non-ASCII byte in install.ps1 would break the install.
       - name: Install (windows)
         if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
+          Start-Process python -ArgumentList 'test/serve', 'dist', '8765' -WindowStyle Hidden
+          foreach ($i in 1..20) {
+            try { Invoke-WebRequest http://127.0.0.1:8765/SHA256SUMS -UseBasicParsing | Out-Null; break }
+            catch { Start-Sleep -Milliseconds 500 }
+          }
           $env:NAUTICE_PREFIX = "$env:RUNNER_TEMP\p"
-          $env:NAUTICE_ARCHIVE = (Resolve-Path .\dist\nautice-windows.zip).Path
-          .\install.ps1
+          $env:NAUTICE_ARCHIVE = 'http://127.0.0.1:8765/nautice-windows.zip'
+          irm http://127.0.0.1:8765/install.ps1 | iex
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & "$env:RUNNER_TEMP\p\bin\nautice.ps1" list sounds
 

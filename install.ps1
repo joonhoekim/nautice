@@ -1,11 +1,11 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Installs nautice (Windows). macOS / Linux: install.sh.
 .DESCRIPTION
     docs/install.md is the contract for both; change them together.
 
-      irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+      irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 | iex
 #>
 
 Set-StrictMode -Version Latest
@@ -38,7 +38,7 @@ $BinDir  = Join-Path $Prefix 'bin'
 # Under irm | iex there is no $args or $PSCommandPath; everything comes from
 # environment variables.
 
-# ── PATH ────────────────────────────────────────────────────────────────────
+# -- PATH --------------------------------------------------------------------
 # The user PATH is a registry value: no file parsing, easy to add and remove
 # without duplicates. Windows has no ~/.local/bin convention, so without it new
 # shells would not find nautice.
@@ -62,7 +62,7 @@ function Remove-UserPath($dir) {
     [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
 }
 
-# ── Uninstall ───────────────────────────────────────────────────────────────
+# -- Uninstall ---------------------------------------------------------------
 if ((Get-EnvOr 'NAUTICE_UNINSTALL' '') -eq '1') {
     # Leave $Prefix itself: it may be shared with other software.
     foreach ($f in @('nautice', 'nautice.ps1', 'nautice.cmd')) {
@@ -74,9 +74,9 @@ if ((Get-EnvOr 'NAUTICE_UNINSTALL' '') -eq '1') {
     exit 0
 }
 
-# ── Download ────────────────────────────────────────────────────────────────
+# -- Download ----------------------------------------------------------------
 # Invoke-WebRequest -OutFile keeps bytes. irm decodes to a string, which strips
-# nautice.ps1's UTF-8 BOM and corrupts .wav — hence one zip, not loose files.
+# nautice.ps1's UTF-8 BOM and corrupts .wav - hence one zip, not loose files.
 function Get-File($url, $dest) {
     try {
         $old = $ProgressPreference
@@ -114,7 +114,7 @@ try {
         Say 'hash verified'
     }
 
-    # ── Extract and copy ────────────────────────────────────────────────────
+    # -- Extract and copy ----------------------------------------------------
     $out = Join-Path $tmp 'x'
     try { Expand-Archive -LiteralPath $zip -DestinationPath $out -Force }
     catch { Die "cannot extract the archive (download may be truncated): $($_.Exception.Message)" }

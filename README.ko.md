@@ -41,13 +41,13 @@ nautice say -c visual "빌드 끝"       # 배너만
 **macOS · Linux**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | bash
+curl -fsSL https://github.com/joonhoekim/nautice/releases/latest/download/install.sh | bash
 ```
 
 **Windows**
 
 ```powershell
-irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 | iex
 ```
 
 `~/.local` (Windows 는 `%LOCALAPPDATA%\Programs\nautice`) 에 넣고 **무엇이
@@ -62,11 +62,11 @@ Git Bash 에서 `nautice` 를 부르면 `nautice.ps1` 로 넘어간다 — 이�
 같은 스크립트에 `NAUTICE_UNINSTALL=1` 을 준다.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | NAUTICE_UNINSTALL=1 bash
+curl -fsSL https://github.com/joonhoekim/nautice/releases/latest/download/install.sh | NAUTICE_UNINSTALL=1 bash
 ```
 
 ```powershell
-$env:NAUTICE_UNINSTALL = '1'; irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+$env:NAUTICE_UNINSTALL = '1'; irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 | iex
 ```
 
 설치했던 파일과 `share/nautice` 를 지운다. Windows 는 등록했던 `PATH` 항목도

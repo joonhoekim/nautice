@@ -56,6 +56,16 @@ and uninstalling: [`docs/install.md`](docs/install.md).
 
 In Git Bash, `nautice` hands over to `nautice.ps1`, so one name works everywhere.
 
+### Update
+
+```sh
+nautice update
+```
+
+Downloads the latest release's installer and re-runs it for this installation;
+running the install line again does the same. Nix installs update with
+`nix profile upgrade nautice`.
+
 ### Uninstall
 
 Run the same script with `NAUTICE_UNINSTALL=1`.

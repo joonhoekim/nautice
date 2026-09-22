@@ -178,6 +178,8 @@ reject_case() {
 }
 reject_case 'unknown option'   say --bogus x
 reject_case 'unknown command'  bogus
+# A checkout is not an installer-managed prefix; update must refuse, not overwrite it.
+reject_case 'update from a checkout' update
 reject_case 'cache bad argument' cache bogus
 reject_case 'list bad argument'  list bogus
 reject_case 'unknown sound'    play NoSuchSound
@@ -360,6 +362,8 @@ echo
 # An undocumented variable is undiscoverable. Reads files only, so it runs anywhere.
 echo "Contract documents every environment variable"
 impl_envs=$(grep -ohE 'NAUTICE_[A-Z_]+' "$BASH_IMPL" "$PS_IMPL" | sort -u)
+# docs/cli.md may also mention installer variables (update passes them through).
+readers=$(grep -ohE 'NAUTICE_[A-Z_]+' "$BASH_IMPL" "$PS_IMPL" install.sh install.ps1 | sort -u)
 doc_envs=$(grep -ohE 'NAUTICE_[A-Z_]+' docs/cli.md | sort -u)
 for v in $impl_envs; do
   if grep -qF "$v" docs/cli.md; then ok "$v"; else bad "$v" "read by an implementation but missing from docs/cli.md"; fi
@@ -368,7 +372,7 @@ done
 # NAUTICE_VOICE_ prefix, so documented names under it count as covered.
 for v in $doc_envs; do
   covered=0
-  for i in $impl_envs; do
+  for i in $readers; do
     if [[ $v == "$i" ]] || [[ $i == *_ && $v == "$i"* ]]; then covered=1; break; fi
   done
   (( covered )) || bad "$v" "in docs/cli.md but read by no implementation"

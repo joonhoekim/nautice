@@ -57,6 +57,15 @@ irm https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1 |
 
 Git Bash 에서 `nautice` 를 부르면 `nautice.ps1` 로 넘어간다 — 이름 하나로 쓴다.
 
+### 업데이트
+
+```sh
+nautice update
+```
+
+최신 릴리스의 인스톨러를 받아 이 설치본에 다시 돌린다. 설치 한 줄을 다시 돌려도
+같다. nix 로 깔았으면 `nix profile upgrade nautice` 로 올린다.
+
 ### 지우기
 
 같은 스크립트에 `NAUTICE_UNINSTALL=1` 을 준다.

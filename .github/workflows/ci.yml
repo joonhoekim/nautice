@@ -76,6 +76,8 @@ jobs:
           curl -fsSL http://127.0.0.1:8765/install.sh \
             | NAUTICE_PREFIX="$RUNNER_TEMP/p" NAUTICE_ARCHIVE=http://127.0.0.1:8765/nautice-unix.tar.gz bash
           "$RUNNER_TEMP/p/bin/nautice" --version
+          # update fetches the latest released installer and reruns it for this prefix.
+          NAUTICE_ARCHIVE=http://127.0.0.1:8765/nautice-unix.tar.gz "$RUNNER_TEMP/p/bin/nautice" update
 
       - name: Uninstall (unix)
         if: matrix.os != 'windows-latest'
@@ -98,6 +100,10 @@ jobs:
           $env:NAUTICE_PREFIX = "$env:RUNNER_TEMP\p"
           $env:NAUTICE_ARCHIVE = 'http://127.0.0.1:8765/nautice-windows.zip'
           irm http://127.0.0.1:8765/install.ps1 | iex
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # update fetches the latest released installer and reruns it for this prefix.
+          $env:NAUTICE_PREFIX = $null
+          & "$env:RUNNER_TEMP\p\bin\nautice.ps1" update
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & "$env:RUNNER_TEMP\p\bin\nautice.ps1" list sounds
 

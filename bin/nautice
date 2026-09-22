@@ -587,6 +587,29 @@ cmd_cache() {
   esac
 }
 
+# Re-run the release's installer for this prefix; the install logic lives only
+# in the installers (docs/cli.md, "Updating").
+cmd_update() {
+  local dir prefix tmp rc=0
+  local url=https://github.com/joonhoekim/nautice/releases/latest/download/install.sh
+  dir=$(script_dir)
+  case $dir in
+    /nix/store/*) die "installed with nix; update with: nix profile upgrade nautice" ;;
+  esac
+  prefix=$(cd -P "$dir/.." && pwd)
+  [[ -d $prefix/share/nautice/sounds ]] \
+    || die "not installed by install.sh ($prefix); update it the way it was installed"
+  tmp=$(mktemp "${TMPDIR:-/tmp}/nautice-install.XXXXXX") || die "cannot create a temporary file"
+  if command -v curl >/dev/null 2>&1; then curl -fsSL -o "$tmp" "$url" || rc=$?
+  elif command -v wget >/dev/null 2>&1; then wget -qO "$tmp" "$url" || rc=$?
+  else rm -f "$tmp"; die "neither curl nor wget found"
+  fi
+  (( rc == 0 )) || { rm -f "$tmp"; die "download failed: $url"; }
+  NAUTICE_PREFIX=$prefix bash "$tmp" || rc=$?
+  rm -f "$tmp"
+  return $rc
+}
+
 usage() {
   cat <<'USAGE'
 nautice — a notification CLI that lets an agent get a human's attention
@@ -599,6 +622,7 @@ Usage
   nautice list  [voices|sounds]         list voices or sounds
   nautice doctor                        check the environment
   nautice cache [info|clear]            render cache
+  nautice update                        update this installation
 
 Options
   -v, --voice NAME    voice (auto | best | name)
@@ -720,7 +744,7 @@ case $cmd in
     cache_prune "$VERSION"
     "cmd_$cmd" "$@" ;;
   list|doctor) cache_prune "$VERSION"; "cmd_$cmd" "$@" ;;
-  cache) "cmd_$cmd" "$@" ;;
+  cache|update) "cmd_$cmd" "$@" ;;
   ""|help) usage ;;
   *) die "unknown command: $cmd (nautice --help)" ;;
 esac

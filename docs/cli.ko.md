@@ -20,6 +20,7 @@
 | `nautice list [voices\|sounds]` | 효과음 목록, 또는 모든 언어의 보이스를 언어별로 |
 | `nautice doctor` | 환경 점검. 보이스가 있는 언어도 밝힌다. 정상이면 0 |
 | `nautice cache [info\|clear]` | 렌더 캐시 |
+| `nautice update` | 최신 릴리스로 이 설치본을 업데이트한다 |
 
 `call` 의 기본 문구는 `Your agent is calling` 이다. 이 도구는 특정 에이전트에
 묶이지 않는다 — 부르는 쪽 이름을 넣고 싶으면 `NAUTICE_CALL_MESSAGE` 로 바꾼다.
@@ -143,6 +144,20 @@ finished` 는 같은 문자다. 그래서 OS 로캘(`LANG`·`LC_MESSAGES`, Windo
 
 Windows SAPI 의 `Rate` 는 −10 – 10 이고 속도는 대략 `3^(Rate/10)` 배다. 그래서
 역함수 `10·log₃(배속)` 로 환산하고 −10 – 10 으로 자른다.
+
+## 업데이트
+
+`nautice update` 는 최신 릴리스의 인스톨러를 받아 `NAUTICE_PREFIX` 를 이 설치본의
+prefix 로 두고 돌린다 — 설치 로직은 인스톨러에만 있다. `NAUTICE_VERSION` 과
+`NAUTICE_ARCHIVE` 는 그대로 넘어가므로 `NAUTICE_VERSION=v0.4.0 nautice update` 는
+그 버전을 깐다.
+
+인스톨러로 깐 설치본만 업데이트한다. `<prefix>/bin` + `<prefix>/share/nautice/sounds`
+배치로 알아본다. nix 로 깐 것(`/nix/store` 아래)은 `nix profile upgrade` 를 안내하며
+1 로 죽고, 저장소 체크아웃 같은 나머지는 깐 방식대로 업데이트하라며 1 로 죽는다.
+
+알림 명령은 절대 네트워크를 타지 않는다. 훅이 부르므로 빠르고 오프라인에서도
+돌아야 한다.
 
 ## 캐시
 

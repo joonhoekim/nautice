@@ -121,6 +121,12 @@ The change applies **to new shells**.
 The final `doctor` **does not affect the exit code**: a missing backend is not a
 failed install. `nautice --version` failing is — exit 1.
 
+## Update
+
+Running the install line again updates in place. `nautice update` does exactly
+that for the prefix it is installed in (see `docs/cli.md`), so the update logic
+is the install logic.
+
 ## Uninstall
 
 ```sh

@@ -457,6 +457,28 @@ function Invoke-Cache([hashtable] $o) {
     Write-Output 'no render cache on this platform (SAPI takes volume and rate directly)'
 }
 
+# Re-run the release's installer for this prefix; the install logic lives only
+# in the installers (docs/cli.md, "Updating"). A new process with the same host:
+# the installer replaces this very script.
+function Invoke-Update([hashtable] $o) {
+    $prefix = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+    if (-not (Test-Path ([IO.Path]::Combine($prefix, 'share', 'nautice', 'sounds')))) {
+        Die "not installed by install.ps1 ($prefix); update it the way it was installed"
+    }
+    $url = 'https://github.com/joonhoekim/nautice/releases/latest/download/install.ps1'
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ("nautice-install." + [IO.Path]::GetRandomFileName() + ".ps1")
+    $ProgressPreference = 'SilentlyContinue'
+    try { Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing }
+    catch { Die "download failed: $url ($($_.Exception.Message))" }
+    $env:NAUTICE_PREFIX = $prefix
+    $rc = 1
+    try {
+        & (Get-Process -Id $PID).Path -NoProfile -ExecutionPolicy Bypass -File $tmp
+        $rc = $LASTEXITCODE
+    } finally { Remove-Item -Force -ErrorAction SilentlyContinue $tmp }
+    exit $rc
+}
+
 function Show-Usage {
     @'
 nautice — a notification CLI that lets an agent get a human's attention
@@ -469,6 +491,7 @@ Usage
   nautice list  [voices|sounds]         list voices or sounds
   nautice doctor                        check the environment
   nautice cache [info|clear]            render cache
+  nautice update                        update this installation
 
 Options
   -v, --voice NAME    voice (auto | best | name)
@@ -541,6 +564,7 @@ switch ($o.Command) {
     'list'   { Invoke-List  $o }
     'doctor' { Invoke-Doctor $o }
     'cache'  { Invoke-Cache $o }
+    'update' { Invoke-Update $o }
     ''       { Show-Usage }
     'help'   { Show-Usage }
     default  { Die "unknown command: $($o.Command) (nautice --help)" }

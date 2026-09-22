@@ -19,6 +19,7 @@ single source of truth; never change only one implementation —
 | `nautice list [voices\|sounds]` | Lists sounds, or voices for every language grouped by language |
 | `nautice doctor` | Checks the environment and lists the languages that have a voice; 0 when healthy |
 | `nautice cache [info\|clear]` | Render cache |
+| `nautice update` | Updates this installation from the latest release |
 
 `call` speaks `Your agent is calling` by default. The
 tool is not tied to any agent; to name yours, set `NAUTICE_CALL_MESSAGE`. It is
@@ -145,6 +146,21 @@ OS-neutral units; each implementation converts to its backend.
 
 Windows SAPI `Rate` is −10 – 10 and speed is roughly `3^(Rate/10)`, so the
 inverse `10·log₃(rate)` is used and clamped to −10 – 10.
+
+## Updating
+
+`nautice update` downloads the installer from the latest release and runs it
+with `NAUTICE_PREFIX` set to this installation's prefix — the install logic
+lives only in the installers. `NAUTICE_VERSION` and `NAUTICE_ARCHIVE` pass
+through, so `NAUTICE_VERSION=v0.4.0 nautice update` installs that version.
+
+It only updates installs made by the installers, recognised by the layout
+`<prefix>/bin` + `<prefix>/share/nautice/sounds`. A nix install (under
+`/nix/store`) exits 1 pointing to `nix profile upgrade`; anything else, such as
+a repository checkout, exits 1 asking to update it the way it was installed.
+
+The notification commands never touch the network: hooks call them and they
+must stay fast and work offline.
 
 ## Cache
 

@@ -371,12 +371,25 @@ Assert-Range $o.Rate   0.1 10 '--rate'
 Assert-Range $o.Repeat 1   20 '--repeat'
 Assert-Range $o.Gap    0   10 '--gap'
 
+# Start-Process 는 -ArgumentList 의 원소를 공백으로 이어 붙이기만 하고 따옴표를
+# 붙이지 않는다. 윈도 보이스 이름에는 공백이 있어서(`Microsoft Heami Desktop`)
+# 그냥 넘기면 자식이 `-v Microsoft` 로 읽고 나머지를 문구로 삼는다 — 에러도 없고
+# 종료코드도 0 인 채로 엉뚱한 보이스가 엉뚱한 문구를 읽는다. 소리는 나므로 귀로도
+# 놓친다. CommandLineToArgvW 규칙대로 직접 감싼다.
+function Format-CmdArg([string] $a) {
+    # 따옴표 앞의 역슬래시와 닫는 따옴표 앞의 역슬래시만 두 배로 한다.
+    $s = $a -replace '(\\*)"', '$1$1\"'
+    $s = $s -replace '(\\+)$', '$1$1'
+    return '"' + $s + '"'
+}
+
 # 훅에서 쓰려면 에이전트를 막지 않아야 한다. 인자를 다 검사한 뒤에 떼어내므로
 # 인자가 틀렸으면 떼어내기 전에 여기서 죽는다.
 if ($o.Async -and @('say', 'play', 'alert', 'call') -contains $o.Command) {
     $passthru = @($args | Where-Object { $_ -cne '-a' -and $_ -cne '--async' })
-    Start-Process -FilePath 'powershell' -WindowStyle Hidden `
-        -ArgumentList (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-q') + $passthru)
+    $cmdline = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-q') + $passthru |
+                ForEach-Object { Format-CmdArg $_ }) -join ' '
+    Start-Process -FilePath 'powershell' -WindowStyle Hidden -ArgumentList $cmdline
     exit 0
 }
 

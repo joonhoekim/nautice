@@ -1,0 +1,5 @@
+# 윈도우 실행 파일은 CRLF, POSIX 셈은 LF 로 고정한다
+*.ps1        text eol=crlf
+*.cmd        text eol=crlf
+bin/claude-call text eol=lf
+*.md         text eol=lf

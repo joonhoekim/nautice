@@ -275,6 +275,20 @@ if (( have_ps )); then
   if [[ $got == "nautice $v_ps" ]]; then ok "ps --version"
   else bad "ps --version" "기대 'nautice $v_ps', 실제 '$got'"; fi
 fi
+
+# README 가 에이전트에게 주는 프롬프트는 옵션을 이름으로 부른다. 옵션이
+# 바뀌면 그 프롬프트는 없는 옵션을 쓰라고 시키고, 에이전트가 그대로 설정을
+# 고친 뒤에야 드러난다.
+echo "README 의 에이전트 안내가 부르는 옵션이 있는가"
+readme_opts=$(sed -n '/^## 에이전트에 물리기/,/^## 구조/p' README.md \
+  | grep -oE '`--?[a-z][a-z-]*' | tr -d '`' | sort -u)
+[[ -n $readme_opts ]] || bad 'README 안내' '옵션을 하나도 못 읽었다 (절 제목이 바뀌었나)'
+for opt in $readme_opts; do
+  miss=""
+  (( have_bash )) && ! run_bash --help | grep -q -- "$opt" && miss="bash"
+  (( have_ps ))   && ! run_ps   --help | grep -q -- "$opt" && miss="${miss:+$miss, }ps"
+  if [[ -n $miss ]]; then bad "README $opt" "도움말에 없다: $miss"; else ok "README $opt"; fi
+done
 echo
 
 # ── 계약의 효과음 이름표가 번들에 있는가 ────────────────────────────────────

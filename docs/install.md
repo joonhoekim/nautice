@@ -105,12 +105,16 @@ GitHub 이 자동 생성하는 `archive/*.tar.gz` 를 쓰지 않는 것은 그 �
 ## 지우기
 
 ```sh
-NAUTICE_UNINSTALL=1 bash install.sh
+curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | NAUTICE_UNINSTALL=1 bash
+NAUTICE_UNINSTALL=1 bash install.sh    # 레포에서 바로
 ```
 
 ```powershell
 $env:NAUTICE_UNINSTALL = '1'; irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
 ```
+
+PowerShell 의 `$env:` 는 **그 세션 내내 남는다.** 같은 창에서 설치 한 줄을 다시
+부르면 설치가 아니라 또 지운다. `$env:NAUTICE_UNINSTALL = $null` 로 치운다.
 
 `$PREFIX/bin` 의 세 파일과 `$PREFIX/share/nautice` 를 지운다. `$PREFIX` 자체는
 남긴다 — 남의 것이 같이 들어 있는 디렉터리다. Windows 는 등록했던 `PATH`

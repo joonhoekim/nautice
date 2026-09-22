@@ -53,6 +53,34 @@ irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
 
 Git Bash 에서 `nautice` 를 부르면 `nautice.ps1` 로 넘어간다 — 이름 하나로 쓴다.
 
+### 지우기
+
+같은 스크립트에 `NAUTICE_UNINSTALL=1` 을 준다.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/joonhoekim/nautice/main/install.sh | NAUTICE_UNINSTALL=1 bash
+```
+
+```powershell
+$env:NAUTICE_UNINSTALL = '1'; irm https://raw.githubusercontent.com/joonhoekim/nautice/main/install.ps1 | iex
+```
+
+설치했던 파일과 `share/nautice` 를 지운다. Windows 는 등록했던 `PATH` 항목도
+뺀다. 설치 위치를 바꿨으면 지울 때도 `NAUTICE_PREFIX` 를 같이 준다.
+
+네트워크 없이 지워도 된다 — 받은 것이 파일뿐이다.
+
+```sh
+rm -rf ~/.local/bin/nautice ~/.local/share/nautice
+```
+
+```powershell
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\nautice"
+```
+
+캐시는 따로 남는다. `nautice cache clear` 로 비우거나(지우기 전에) 디렉터리를
+직접 지운다 — `~/.cache/nautice`. Windows 는 캐시를 쓰지 않는다.
+
 <details>
 <summary>nix</summary>
 
@@ -61,6 +89,8 @@ nix run github:joonhoekim/nautice -- call
 nix run github:joonhoekim/nautice/v0.4.0 -- call   # 태그를 박아서
 nix profile install github:joonhoekim/nautice
 ./bin/nautice doctor                               # 레포에서 바로
+
+nix profile remove nautice                         # 지우기
 ```
 
 </details>

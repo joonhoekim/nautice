@@ -210,6 +210,9 @@ resolve_lang() {
 # locale code (ko_KR, ar_001) is the only reliable end-of-name marker.
 voice_table() {
   local f="$CACHE_DIR/.voices"
+  # Without espeak-ng there are no voices, whatever a run with it cached (a nix
+  # wrapper and a plain install share the cache).
+  if [[ $PLATFORM == linux ]] && ! command -v espeak-ng >/dev/null 2>&1; then return 0; fi
   if [[ ! -s $f ]]; then
     mkdir -p "$CACHE_DIR"
     case $PLATFORM in
@@ -218,13 +221,21 @@ voice_table() {
           | sed -E -n 's/^(.*[^[:space:]])[[:space:]]+([a-z]{2})_[A-Z0-9]{2,3}[[:space:]]+#.*$/\1\t\2/p' \
           > "$f" ;;
       linux)
-        # espeak-ng --voices columns: Pty Language Age/Gender VoiceName File Other
-        if command -v espeak-ng >/dev/null 2>&1; then
-          espeak-ng --voices 2>/dev/null \
-            | awk 'NR > 1 { c = $2; sub(/-.*/, "", c); print $4 "\t" c }' > "$f"
-        else
-          : > "$f"
-        fi ;;
+        # espeak-ng --voices columns: Pty Language Age/Gender VoiceName File Other.
+        # The name is the Language column: -v rejects VoiceName once it has
+        # "(" (Chinese_(Cantonese)), and matches case-sensitively, so the one
+        # mixed-case id (chr-US-Qaaa-x-west) gives way to its File (iro/chr).
+        # Other lists aliases as "(zh 5)": Chinese is listed only as cmn and
+        # yue, yet -v zh works, so aliases count as languages too.
+        espeak-ng --voices 2>/dev/null | awk 'NR > 1 {
+            n = ($2 ~ /[A-Z]/) ? $5 : $2; c = $2; sub(/-.*/, "", c); print n "\t" c
+            s = $0
+            while (match(s, /\([a-z]+(-[a-z0-9]+)* [0-9]+\)/)) {
+              a = substr(s, RSTART + 1, RLENGTH - 2); sub(/ .*/, "", a); sub(/-.*/, "", a)
+              if (a != c) print n "\t" a
+              s = substr(s, RSTART + RLENGTH)
+            }
+          }' | awk '!seen[$0]++' > "$f" ;;
     esac
   fi
   cat "$f"
@@ -285,8 +296,14 @@ resolve_voice() {
     [[ -n $named ]] && v=$named || v=best
   fi
   # espeak-ng has no quality tiers and takes the language code as the voice.
+  # It has no voice for some locales' languages (gl, tl): -v gl exits 1, and
+  # under --async every notification is lost without a sound. Fall back to en
+  # (docs/cli.md). An empty table means piper or no TTS; the code is kept then.
   if [[ $PLATFORM == linux ]]; then
-    [[ $v == best || $v == auto ]] && v=$lang
+    if [[ $v == best || $v == auto ]]; then
+      v=$lang
+      [[ -n $(voice_table) && -z $(voice_list "$lang") ]] && v=en
+    fi
     printf '%s' "$v"; return
   fi
   if [[ $v == best ]]; then

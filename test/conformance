@@ -286,6 +286,51 @@ else
 fi
 echo
 
+# ── Linux voices ────────────────────────────────────────────────────────────
+# espeak-ng lacks some locales' languages (gl, tl) and exits 1 for them; under
+# --async that loses every notification silently. A stub stands in for
+# espeak-ng so this runs where it is not installed.
+echo "Linux voices (bash side)"
+if (( have_bash )) && [[ $(uname -s) == Linux ]]; then
+  c=$(mktemp -d)
+  mkdir "$c/bin"
+  cat > "$c/bin/espeak-ng" <<'STUB'
+#!/bin/sh
+cat <<'V'
+Pty Language       Age/Gender VoiceName          File                 Other Languages
+ 5  af              --/M      Afrikaans          gmw/af
+ 5  chr-US-Qaaa-x-west --/M      Cherokee_          iro/chr
+ 5  cmn             --/M      Chinese_(Mandarin,_latin_as_English) sit/cmn              (zh-cmn 5)(zh 5)
+ 2  en-us           --/M      English_(America)  gmw/en-US            (en 3)
+ 5  nb              --/M      Norwegian_Bokmål  gmq/nb               (no 5)
+V
+STUB
+  chmod +x "$c/bin/espeak-ng"
+  voice_of() { NAUTICE_CACHE=$c/cache PATH=$c/bin:$PATH run_bash --plan say "$@" | sed -n 's/^voice=//p'; }
+  got=$(voice_of -l gl "Ola")
+  if [[ $got == en ]]; then ok "language without a voice falls back to en"
+  else bad "no-voice fallback" "voice '$got', want en"; fi
+  got=$(voice_of "构建完成")
+  if [[ $got == zh ]]; then ok "zh found through espeak-ng's alias"
+  else bad "zh alias" "voice '$got', want zh"; fi
+  got=$(NAUTICE_CACHE=$c/cache PATH=$c/bin:$PATH run_bash list voices | sed -n 's/^  //p' | sort -u | tr '\n' ' ')
+  if [[ $got == "af cmn en-us iro/chr nb " ]]; then ok "list voices shows names -v accepts"
+  else bad "list voices" "'$got'"; fi
+  # The cache now holds a voice table; without espeak-ng it must not be shown.
+  # espeak-ng may sit next to these tools in /usr/bin, so the PATH holds only them.
+  mkdir "$c/min"
+  for t in bash uname dirname readlink awk sed od tr grep cut sort find wc du mkdir cat rm rmdir head; do
+    ln -s "$(command -v "$t")" "$c/min/$t"
+  done
+  got=$(NAUTICE_CACHE=$c/cache PATH=$c/min run_bash doctor | sed -n 's/^  languages *//p')
+  if [[ -z ${got// } ]]; then ok "doctor lists no languages without espeak-ng"
+  else bad "doctor languages" "'$got' from a stale cache"; fi
+  rm -rf "$c"
+else
+  printf '  \033[33mskip\033[0m %s\n' "Linux voices (not Linux)"
+fi
+echo
+
 # ── install.ps1 is plain ASCII ──────────────────────────────────────────────
 # It is piped through irm from an octet-stream release asset with no charset;
 # a BOM or any byte >= 0x80 may be decoded differently by PowerShell 5.1.

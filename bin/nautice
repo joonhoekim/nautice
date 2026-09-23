@@ -73,7 +73,10 @@ find_sounds() {
   [[ -n ${NAUTICE_SOUNDS:-} ]] && { printf '%s' "$NAUTICE_SOUNDS"; return; }
   local d; d=$(script_dir)
   local c
-  for c in "$d/../share/sounds" "$d/../share/nautice/sounds"; do
+  # Installed layout first: <prefix>/share/sounds is the XDG sound theme
+  # directory, present under ~/.local on most desktops, and picking it made
+  # every bundled sound "no such sound". A checkout has only share/sounds.
+  for c in "$d/../share/nautice/sounds" "$d/../share/sounds"; do
     [[ -d $c ]] && { cd -P "$c" && pwd; return; }
   done
   die "bundled sounds not found; set NAUTICE_SOUNDS"

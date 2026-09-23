@@ -229,7 +229,9 @@ function Get-SoundsDir {
     $env_ = [Environment]::GetEnvironmentVariable('NAUTICE_SOUNDS')
     if (-not [string]::IsNullOrWhiteSpace($env_)) { return $env_ }
     $here = Split-Path -Parent $PSCommandPath
-    foreach ($c in @('..\share\sounds', '..\share\nautice\sounds')) {
+    # Installed layout first, as in bash: a share\sounds under the prefix may
+    # belong to other software. A checkout has only share\sounds.
+    foreach ($c in @('..\share\nautice\sounds', '..\share\sounds')) {
         $p = Join-Path $here $c
         if (Test-Path $p) { return (Resolve-Path $p).Path }
     }

@@ -339,6 +339,27 @@ else
 fi
 echo
 
+# ── Installed layout beside a sound theme ───────────────────────────────────
+# <prefix>/share/sounds is the XDG sound theme directory (~/.local on most
+# desktops); taking it for the bundle made every sound "no such sound".
+echo "Installed layout finds its sounds beside a sound theme"
+c=$(mktemp -d)
+mkdir -p "$c/bin" "$c/share/sounds/freedesktop" "$c/share/nautice/sounds"
+cp "$BASH_IMPL" "$PS_IMPL" "$c/bin/"
+cp share/sounds/*.wav "$c/share/nautice/sounds/"
+if (( have_bash )); then
+  if "$c/bin/nautice" play --plan ok >/dev/null 2>&1; then ok "bash finds share/nautice/sounds"
+  else bad "bash sound dir" "$("$c/bin/nautice" play --plan ok 2>&1 | head -1)"; fi
+fi
+if (( have_ps )); then
+  PS_IMPL=$c/bin/nautice.ps1
+  if run_ps play --plan ok | grep -q '^command=play'; then ok "ps finds share/nautice/sounds"
+  else bad "ps sound dir" "$(run_ps play --plan ok | head -1)"; fi
+  PS_IMPL=bin/nautice.ps1
+fi
+rm -rf "$c"
+echo
+
 # ── Lead-in silence is spliced alike ────────────────────────────────────────
 # Both sides rewrite WAV headers with their own parser; a size off by one byte
 # plays on one OS and fails or clicks on the other. The bash side's output is

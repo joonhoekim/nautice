@@ -266,8 +266,8 @@ nix build .#nautice    # shellcheck 까지 돈다
 
 - **캐시** — `sha1(플랫폼|보이스|배속|문장)` 으로 `$NAUTICE_CACHE/<버전>/`.
   업그레이드하면 새 캐시로 시작한다. 해시 도구는
-  `shasum` → `sha1sum` → `md5sum` 순으로 찾는다. 최소 설치된 Linux 에는 `shasum`
-  이 없다.
+  `sha1sum` → `shasum` → `md5sum` 순으로 찾는다. macOS 에는 `shasum` 만 있는데,
+  perl 스크립트라 느리고 로케일이 설치되지 않은 환경에서 경고를 쏟아낸다.
 - **락** — 재생 구간에만 건다. 렌더는 병렬이어도 된다. `flock` 이 없으면 mkdir
   락으로 떨어지고, 30초가 지나면 포기하고 그냥 재생한다 — 겹쳐 들리는 편이
   알림을 조용히 잃는 것보다 낫다.

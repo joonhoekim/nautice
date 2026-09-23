@@ -31,13 +31,15 @@ LOCK_TIMEOUT=30
 
 die() { printf 'nautice: %s\n' "$*" >&2; exit 1; }
 
-# shasum is always on macOS but missing from minimal Linux (debian:stable-slim),
-# which has sha1sum. The hash is only a cache key, so any of them will do.
+# sha1sum first: shasum is a perl script, 14 ms a run against 1 ms, and prints
+# ~20 lines of "Setting locale failed" whenever LANG names a locale that is not
+# installed (common in containers). Both print the same hash, so cache keys
+# survive the switch. macOS has only shasum; minimal Linux only sha1sum.
 hash_stdin() {
-  if   command -v shasum  >/dev/null 2>&1; then shasum
-  elif command -v sha1sum >/dev/null 2>&1; then sha1sum
+  if   command -v sha1sum >/dev/null 2>&1; then sha1sum
+  elif command -v shasum  >/dev/null 2>&1; then shasum
   elif command -v md5sum  >/dev/null 2>&1; then md5sum
-  else die "no hash tool (need shasum, sha1sum or md5sum)"
+  else die "no hash tool (need sha1sum, shasum or md5sum)"
   fi
 }
 say_status() { [[ $OPT_QUIET == 1 ]] || printf 'nautice: %s\n' "$*"; }
@@ -556,9 +558,9 @@ cmd_doctor() {
   fi
 
   local h=''
-  for t in shasum sha1sum md5sum; do command -v "$t" >/dev/null && { h=$t; break; }; done
+  for t in sha1sum shasum md5sum; do command -v "$t" >/dev/null && { h=$t; break; }; done
   if [[ -n $h ]]; then printf '  %-12s %s\n' hash "$(command -v "$h")"
-  else printf '  %-12s missing (need shasum, sha1sum or md5sum)\n' hash; ok=1; fi
+  else printf '  %-12s missing (need sha1sum, shasum or md5sum)\n' hash; ok=1; fi
 
   if command -v flock >/dev/null; then printf '  %-12s %s\n' flock "$(command -v flock)"
   else printf '  %-12s missing (using a mkdir lock)\n' flock; fi

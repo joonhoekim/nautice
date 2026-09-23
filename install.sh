@@ -80,8 +80,12 @@ src=$(find "$TMP" -maxdepth 1 -type d -name 'nautice-*' | head -1)
 [[ -n $src && -f $src/bin/nautice ]] || die "the archive has no bin/nautice"
 
 mkdir -p "$PREFIX/bin" "$PREFIX/share/nautice/sounds"
-cp -f "$src/bin/nautice" "$PREFIX/bin/nautice"
-chmod 755 "$PREFIX/bin/nautice"
+# Replace by rename, never overwrite in place: bash reads a script as it runs,
+# so a running nautice (`nautice update` itself, or one detached with -a) would
+# resume at its old offset in the new file and die with a syntax error.
+cp -f "$src/bin/nautice" "$PREFIX/bin/.nautice.new"
+chmod 755 "$PREFIX/bin/.nautice.new"
+mv -f "$PREFIX/bin/.nautice.new" "$PREFIX/bin/nautice"
 cp -f "$src"/share/nautice/sounds/*.wav "$PREFIX/share/nautice/sounds/"
 
 # Installed means the installed copy runs. doctor's exit code reflects missing

@@ -147,6 +147,35 @@ finished` 는 같은 문자다. 그래서 OS 로캘(`LANG`·`LC_MESSAGES`, Windo
 잘렸고 0.15 초부터는 온전했다. PipeWire 가 싱크를 절전시키지 않게 해도 소용없었다.
 기본값은 더 느린 장치를 위한 여유를 둔 것이다.
 
+### TTS 명령
+
+내장 엔진(`say`, `espeak-ng`, SAPI)은 어느 기계에나 있는 것이다. 더 나은 엔진은
+bash 쪽(macOS, Linux)에 셸 명령으로 끼울 수 있다. `NAUTICE_TTS_CMD_<언어>`
+(`NAUTICE_TTS_CMD_KO`, …)는 한 언어를, `NAUTICE_TTS_CMD` 는 자기 명령이 없는 모든
+언어를 읽는다. 둘 다 `NAUTICE_PIPER_MODEL` 과 내장 엔진보다 먼저다.
+
+명령은 `sh -c` 로 돌고 다음을 받는다.
+
+| | |
+|---|---|
+| stdin | 텍스트 |
+| `NAUTICE_TTS_OUT` | 써야 할 WAV 파일 경로 |
+| `NAUTICE_TTS_LANG` | 판정된 언어 (`ko`, `en`, …) |
+| `NAUTICE_TTS_RATE` | 받은 그대로의 `--rate` 배속. 환산은 명령이 한다 |
+
+`NAUTICE_TTS_OUT` 에 WAV(RIFF/WAVE)를 쓰고 0 으로 끝나야 한다. 앞머리 무음,
+재생 때의 `--vol`, 캐시는 다른 렌더와 똑같이 nautice 가 맡는다. 캐시 키에 명령 ·
+언어 · 배속 · 텍스트가 들어가므로 명령을 고치면 새로 렌더한다.
+
+**명령이 실패해도 알림은 실패하지 않는다.** 0 이 아닌 종료, WAV 없음, 15초 안에
+안 끝남(`timeout` 이 있을 때) 중 하나면 stderr 에 경고를 찍고 내장 엔진이 대신
+읽는다. 클라우드 엔진이 오프라인이라고 알림을 잃으면 안 된다. `--voice` 는 내장
+엔진에만 걸린다.
+
+`--plan` 은 엔진을 `backend_tts` 로 찍는다. 명령이 걸리면 변수 이름
+(`NAUTICE_TTS_CMD_KO`), 아니면 `say`, `piper`, `espeak-ng`, `sapi` 다.
+`nautice doctor` 는 설정된 명령을 보여준다.
+
 ### 단위를 왜 이렇게 정했나
 
 `--vol` 과 `--rate` 는 OS 마다 원래 단위가 다르다. 계약은 OS 중립 단위로 두고
@@ -226,7 +255,9 @@ bash 쪽은 렌더한 음성과 보이스 해석 결과(보이스 표, 언어별
   TTS 에만 걸리고 효과음은 시스템 볼륨으로 난다.
 - **Linux TTS 품질** — `espeak-ng` 는 포먼트 합성이라 한국어가 많이 거칠다.
   `piper` 공식 보이스에는 쓸 만한 한국어가 없다. `NAUTICE_PIPER_MODEL` 로
-  모델을 직접 지정하면 그쪽을 먼저 쓴다.
+  모델을 직접 지정하면 그쪽을 먼저 쓰고, TTS 명령은 둘보다 먼저다.
+- **TTS 명령** — bash 쪽만. 값이 POSIX 셸 명령인데 Windows 에는 돌릴 `sh` 가
+  없다. 거기서는 `nautice doctor` 가 설정된 것을 무시된다고 알린다.
 - **보이스 `best`** — macOS 만 품질 등급(`(Premium)`/`(Enhanced)`)을 노출한다.
   다른 OS 에서 `best` 는 `auto` 와 같다.
 - **큐(직렬화)** — bash 쪽만 락을 건다. Windows 는 `Speak()` 가 동기라 한 프로세스
@@ -284,3 +315,4 @@ bash 쪽은 렌더한 음성과 보이스 해석 결과(보이스 표, 언어별
 | `NAUTICE_SOUNDS` | 번들 효과음 디렉터리. 비면 실행 파일 옆의 `../share/sounds` 를 찾는다 |
 | `NAUTICE_CACHE` | 캐시 위치 (bash 쪽만 쓴다). 데이터는 버전별 하위 디렉터리에 둔다 |
 | `NAUTICE_PIPER_MODEL` | Linux 에서 쓸 piper `.onnx` 경로 |
+| `NAUTICE_TTS_CMD` `NAUTICE_TTS_CMD_<언어>` | 음성을 렌더하는 셸 명령 (bash 쪽만). "TTS 명령" 참고 |

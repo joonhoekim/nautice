@@ -16,6 +16,7 @@ VERSION=0.4.2
 : "${NAUTICE_VOL:=0.6}"
 : "${NAUTICE_RATE:=1.0}"
 : "${NAUTICE_PIPER_MODEL:=}"
+: "${NAUTICE_TTS_CMD:=}"
 : "${NAUTICE_CHANNEL:=sound}"
 : "${NAUTICE_PREROLL:=0.25}"
 # Neutral on purpose: the tool is not tied to any agent. Users can name theirs.
@@ -29,6 +30,9 @@ BASE_WPM=175
 CACHE_DIR="$NAUTICE_CACHE/$VERSION"
 LOCK="$NAUTICE_CACHE/.lock"
 LOCK_TIMEOUT=30
+# A TTS command that hangs (a cloud engine with no network) would hold the
+# notification; after this many seconds the built-in engine speaks instead.
+TTS_CMD_TIMEOUT=15
 
 die() { printf 'nautice: %s\n' "$*" >&2; exit 1; }
 
@@ -247,6 +251,16 @@ voice_table() {
   cat "$f"
 }
 
+# Languages that can be spoken: those with a voice or a NAUTICE_TTS_CMD_<LANG>.
+tts_langs() {
+  local v
+  voice_table | cut -f2
+  for v in ${!NAUTICE_TTS_CMD_*}; do
+    [[ -n ${!v} && ${v#NAUTICE_TTS_CMD_} =~ ^[A-Z]{2}$ ]] && printf '%s\n' "${v#NAUTICE_TTS_CMD_}" | tr '[:upper:]' '[:lower:]'
+  done
+  return 0
+}
+
 voice_list() { voice_table | awk -F'\t' -v l="$1" '$2 == l { print $1 }'; }
 
 # `say -v NoSuchVoice` exits 0 and quietly uses the default voice, so a typo
@@ -289,16 +303,18 @@ best_voice() {
   printf '%s' "$v"
 }
 
-# Per-language override such as NAUTICE_VOICE_KO. No ${v^^}: bash 3.2 lacks it.
-lang_voice_env() {
-  local n; n=$(printf 'NAUTICE_VOICE_%s' "$1" | tr '[:lower:]' '[:upper:]')
+# Per-language variable such as NAUTICE_VOICE_KO: $1 is the prefix, $2 the
+# language. No ${v^^}: bash 3.2 lacks it. The language is [a-z]{2}, so eval is safe.
+lang_env_name() { printf '%s%s' "$1" "$2" | tr '[:lower:]' '[:upper:]'; }
+lang_env() {
+  local n; n=$(lang_env_name "$1" "$2")
   eval "printf '%s' \"\${$n:-}\""
 }
 
 resolve_voice() {
   local lang=$1 v=${OPT_VOICE:-$NAUTICE_VOICE} named
   if [[ $v == auto ]]; then
-    named=$(lang_voice_env "$lang")
+    named=$(lang_env NAUTICE_VOICE_ "$lang")
     [[ -n $named ]] && v=$named || v=best
   fi
   # espeak-ng has no quality tiers and takes the language code as the voice.
@@ -384,36 +400,96 @@ wav_lead() {
 # file and played by the audio player; caching the file skips re-synthesis.
 wpm_for() { awk -v m="$1" -v b="$BASE_WPM" 'BEGIN { printf "%d", m * b }'; }
 
+# The engine that speaks a language: a user command (NAUTICE_TTS_CMD_<LANG>, then
+# NAUTICE_TTS_CMD, printed as the variable's name), else the built-in one.
+builtin_engine() {
+  if   [[ $PLATFORM == macos ]]; then printf say
+  elif [[ -n $NAUTICE_PIPER_MODEL ]]; then printf piper
+  elif command -v espeak-ng >/dev/null 2>&1; then printf espeak-ng
+  fi
+}
+tts_engine() {
+  if   [[ -n $(lang_env NAUTICE_TTS_CMD_ "$1") ]]; then lang_env_name NAUTICE_TTS_CMD_ "$1"
+  elif [[ -n $NAUTICE_TTS_CMD ]]; then printf NAUTICE_TTS_CMD
+  else builtin_engine
+  fi
+}
+
+is_wav() { [[ -s $1 && $(head -c 4 "$1") == RIFF && $(head -c 12 "$1" | tail -c 4) == WAVE ]]; }
+
+# A user command renders speech (docs/cli.md, "TTS command"): text on stdin,
+# a WAV written to $NAUTICE_TTS_OUT. Returns 1 when it fails, times out or
+# writes no WAV, and the caller falls back to the built-in engine — a cloud
+# engine gone offline must not cost the notification.
+tts_cmd_render() {
+  local var=$1 lang=$2 rate=$3 text=$4 cmd key path tmp rc=0 why
+  eval "cmd=\$$var"
+  key=$(printf 'cmd|%s|%s|%s|%s' "$cmd" "$lang" "$rate" "$text" | hash_stdin | cut -d' ' -f1)
+  path="$CACHE_DIR/$key.wav"
+  [[ -s $path ]] && { printf '%s' "$path"; return 0; }
+  mkdir -p "$CACHE_DIR"
+  # Per process: two notifications rendering the same text must not share a file.
+  tmp="$CACHE_DIR/$key.$$.tmp.wav"
+  local run=(sh -c "$cmd")
+  command -v timeout >/dev/null 2>&1 && run=(timeout "$TTS_CMD_TIMEOUT" "${run[@]}")
+  # A here-string, not printf |: a command that never reads stdin would kill
+  # printf with SIGPIPE, and pipefail would call that a failure.
+  NAUTICE_TTS_OUT=$tmp NAUTICE_TTS_LANG=$lang NAUTICE_TTS_RATE=$rate \
+    "${run[@]}" <<<"$text" >/dev/null 2>"$tmp.err" || rc=$?
+  if (( rc == 0 )) && is_wav "$tmp"; then
+    mv -f "$tmp" "$path"; rm -f "$tmp.err"
+    printf '%s' "$path"; return 0
+  fi
+  if (( rc == 124 )); then why="timed out after ${TTS_CMD_TIMEOUT}s"
+  elif (( rc != 0 )); then why="exit $rc"
+  else why="no WAV written to \$NAUTICE_TTS_OUT"; fi
+  [[ -s $tmp.err ]] && why+=": $(tail -n 1 "$tmp.err")"
+  local b; b=$(builtin_engine) || true
+  printf 'nautice: %s failed (%s); using %s\n' "$var" "$why" "${b:-no engine}" >&2
+  rm -f "$tmp" "$tmp.err"
+  return 1
+}
+
 # $4 is the lead-in in ms. say writes AIFF, so on macOS the synthesiser adds it.
+# Prints who spoke (the voice, or the TTS command's variable) and the file's
+# path, one per line: after a fallback the status line must not name the command.
 tts_render() {
-  local voice=$1 rate=$2 text=$3 lead=$4 key path ext=aiff
+  local voice=$1 rate=$2 text=$3 lead=$4 lang=$5 engine key path ext=aiff
+  engine=$(tts_engine "$lang")
+  if [[ $engine == NAUTICE_TTS_CMD* ]]; then
+    if path=$(tts_cmd_render "$engine" "$lang" "$rate" "$text"); then
+      printf '%s\n%s' "$engine" "$(wav_lead "$path" "$lead")"; return
+    fi
+    engine=$(builtin_engine)
+  fi
   [[ $PLATFORM == linux ]] && ext=wav
-  [[ $PLATFORM == macos ]] && (( lead > 0 )) && text="[[slnc $lead]] $text"
-  key=$(printf '%s|%s|%s|%s' "$PLATFORM" "$voice" "$rate" "$text" | hash_stdin | cut -d' ' -f1)
+  [[ $engine == say ]] && (( lead > 0 )) && text="[[slnc $lead]] $text"
+  # The model is part of the key: another model must not replay this one's file.
+  if [[ $engine == piper ]]; then
+    key=$(printf '%s|%s|%s|%s|%s' "$PLATFORM" "$voice" "$rate" "$text" "$NAUTICE_PIPER_MODEL" | hash_stdin | cut -d' ' -f1)
+  else
+    key=$(printf '%s|%s|%s|%s' "$PLATFORM" "$voice" "$rate" "$text" | hash_stdin | cut -d' ' -f1)
+  fi
   path="$CACHE_DIR/$key.$ext"
   if [[ ! -s $path ]]; then
     mkdir -p "$CACHE_DIR"
-    case $PLATFORM in
-      macos)
+    case $engine in
+      say)
         say -v "$voice" -r "$(wpm_for "$rate")" -o "$path.tmp" -- "$text" \
-          || die "say failed (voice '$voice')"
-        mv -f "$path.tmp" "$path" ;;
-      linux)
-        if [[ -n $NAUTICE_PIPER_MODEL ]]; then
-          command -v piper >/dev/null 2>&1 || die "NAUTICE_PIPER_MODEL is set but piper is not installed"
-          printf '%s' "$text" | piper -m "$NAUTICE_PIPER_MODEL" -f "$path.tmp" >/dev/null 2>&1 \
-            || die "piper failed (model: $NAUTICE_PIPER_MODEL)"
-        elif command -v espeak-ng >/dev/null 2>&1; then
-          espeak-ng -v "$voice" -s "$(wpm_for "$rate")" -w "$path.tmp" -- "$text" \
-            || die "espeak-ng failed (voice '$voice')"
-        else
-          die "no TTS backend (install espeak-ng or set NAUTICE_PIPER_MODEL)"
-        fi
-        mv -f "$path.tmp" "$path" ;;
+          || die "say failed (voice '$voice')" ;;
+      piper)
+        command -v piper >/dev/null 2>&1 || die "NAUTICE_PIPER_MODEL is set but piper is not installed"
+        printf '%s' "$text" | piper -m "$NAUTICE_PIPER_MODEL" -f "$path.tmp" >/dev/null 2>&1 \
+          || die "piper failed (model: $NAUTICE_PIPER_MODEL)" ;;
+      espeak-ng)
+        espeak-ng -v "$voice" -s "$(wpm_for "$rate")" -w "$path.tmp" -- "$text" \
+          || die "espeak-ng failed (voice '$voice')" ;;
+      *) die "no TTS backend (install espeak-ng, or set NAUTICE_TTS_CMD or NAUTICE_PIPER_MODEL)" ;;
     esac
+    mv -f "$path.tmp" "$path"
   fi
-  [[ $PLATFORM == linux ]] && path=$(wav_lead "$path" "$lead")
-  printf '%s' "$path"
+  [[ $engine != say ]] && path=$(wav_lead "$path" "$lead")
+  printf '%s\n%s' "$voice" "$path"
 }
 
 # ── Sound resolution ────────────────────────────────────────────────────────
@@ -510,6 +586,9 @@ print_plan() {
   printf 'backend_rate=%s\n' "$(wpm_for "${OPT_RATE:-$NAUTICE_RATE}")"
   printf 'backend_vol=%.3f\n' "${OPT_VOL:-$NAUTICE_VOL}"
   printf 'backend_visual=%s\n' "$(visual_backend)"
+  # play speaks nothing, so it has no TTS engine.
+  if [[ -n $text ]]; then printf 'backend_tts=%s\n' "$(tts_engine "$lang")"
+  else printf 'backend_tts=\n'; fi
 }
 
 read_text() {
@@ -521,7 +600,7 @@ read_text() {
 
 # ── Commands ────────────────────────────────────────────────────────────────
 cmd_say() {
-  local text voice speech
+  local text voice speech lang
   text=$(read_text "$@")
   if [[ $OPT_PLAN == 1 ]]; then
     voice=$(resolve_voice "$(resolve_lang "$text")" 2>/dev/null) || voice=''
@@ -529,9 +608,11 @@ cmd_say() {
   fi
   maybe_banner "$text"
   if [[ $CHANNEL == visual ]]; then say_status "say banner only"; return 0; fi
-  voice=$(resolve_voice "$(resolve_lang "$text")")
-  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text" "$(preroll_ms)")
-  say_status "say x$OPT_REPEAT [$voice]$(chan_note)"
+  lang=$(resolve_lang "$text")
+  voice=$(resolve_voice "$lang")
+  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text" "$(preroll_ms)" "$lang")
+  say_status "say x$OPT_REPEAT [${speech%%$'\n'*}]$(chan_note)"
+  speech=${speech#*$'\n'}
   with_lock emit "" "$speech"
 }
 
@@ -548,7 +629,7 @@ cmd_play() {
 }
 
 cmd_alert() {
-  local text voice speech chime
+  local text voice speech chime lang
   : "${CMD_NAME:=alert}"
   text=$(read_text "$@")
   if [[ $OPT_PLAN == 1 ]]; then
@@ -557,10 +638,12 @@ cmd_alert() {
   fi
   maybe_banner "$text"
   if [[ $CHANNEL == visual ]]; then say_status "$CMD_NAME banner only"; return 0; fi
-  voice=$(resolve_voice "$(resolve_lang "$text")")
-  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text" 0)
+  lang=$(resolve_lang "$text")
+  voice=$(resolve_voice "$lang")
+  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text" 0 "$lang")
+  local who=${speech%%$'\n'*}; speech=${speech#*$'\n'}
   chime=$(wav_lead "$(sfx_resolve "${OPT_TONE:-ask}")" "$(preroll_ms)")
-  say_status "alert x$OPT_REPEAT [$voice]$(chan_note)"
+  say_status "alert x$OPT_REPEAT [$who]$(chan_note)"
   with_lock emit "$chime" "$speech"
 }
 
@@ -610,8 +693,10 @@ cmd_doctor() {
       command -v piper >/dev/null || { printf '  %-12s piper is not on PATH\n' ''; ok=1; }
     elif command -v espeak-ng >/dev/null; then
       printf '  %-12s espeak-ng (formant synthesis; rough for some languages)\n' TTS
+    elif [[ -n $NAUTICE_TTS_CMD ]]; then
+      printf '  %-12s none (no fallback when NAUTICE_TTS_CMD fails)\n' TTS
     else
-      printf '  %-12s missing (need espeak-ng or NAUTICE_PIPER_MODEL)\n' TTS; ok=1
+      printf '  %-12s missing (need espeak-ng, NAUTICE_TTS_CMD or NAUTICE_PIPER_MODEL)\n' TTS; ok=1
     fi
     if p=$(linux_player); then
       printf '  %-12s %s' player "$p"
@@ -621,6 +706,13 @@ cmd_doctor() {
       printf '  %-12s missing (pw-play, paplay, aplay, ffplay or mpv)\n' player; ok=1
     fi
   fi
+
+  # ${!prefix*}, not compgen -v: nix's non-interactive bash, which the package's
+  # shebang points at, is built without compgen ("command not found").
+  local v
+  for v in ${!NAUTICE_TTS_CMD*}; do
+    [[ -n ${!v} ]] && printf '  %-12s %s: %s\n' 'TTS command' "$v" "${!v}"
+  done
 
   local h=''
   for t in sha1sum shasum md5sum; do command -v "$t" >/dev/null && { h=$t; break; }; done
@@ -645,7 +737,7 @@ cmd_doctor() {
   # Same %.3f format as --plan; with %s, 1.0 prints as "1.0" here but "1" on Windows.
   printf '  %-12s vol=%.3f rate=%.3f\n' defaults "$NAUTICE_VOL" "$NAUTICE_RATE"
   # Languages with a voice. Others fall back silently under -q, so say it here.
-  printf '  %-12s %s\n' languages "$(voice_table | cut -f2 | sort -u | tr '\n' ' ')"
+  printf '  %-12s %s\n' languages "$(tts_langs | sort -u | tr '\n' ' ')"
 
   if [[ $PLATFORM == macos ]]; then
     # Built-in compact/eloquence voices are low quality. Premium/Enhanced ones
@@ -829,7 +921,10 @@ case $cmd in
     cache_prune "$VERSION"
     "cmd_$cmd" "$@" ;;
   list|doctor) cache_prune "$VERSION"; "cmd_$cmd" "$@" ;;
-  cache|update) "cmd_$cmd" "$@" ;;
+  cache) "cmd_$cmd" "$@" ;;
+  # exit before bash reads past this line: an installer that overwrites this
+  # file in place (install.sh up to 0.4.2) would otherwise break the read.
+  update) cmd_update "$@"; exit $? ;;
   ""|help) usage ;;
   *) die "unknown command: $cmd (nautice --help)" ;;
 esac

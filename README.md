@@ -130,10 +130,45 @@ Manage Voices**. Once downloaded, `nautice` picks them automatically; run
 falls back to another voice. No quality tiers are exposed, so `best` equals
 `auto`. `nautice doctor` lists the languages that have a voice.
 
-**Linux is weak for Korean.** `espeak-ng` is formant synthesis, and `piper` has
-no usable official Korean voice. Point `NAUTICE_PIPER_MODEL` at a model if you
-have one. Until then the sound-effect channel (`nautice play`) is far more
-dependable on Linux.
+**Linux's built-in voice is rough**, Korean especially: `espeak-ng` is formant
+synthesis. A better engine can be plugged in per language — see below.
+
+### Better engines (macOS, Linux)
+
+`NAUTICE_TTS_CMD_<LANG>` sets a shell command for one language and
+`NAUTICE_TTS_CMD` one for every other language. The command reads the text on
+stdin and writes a WAV to `$NAUTICE_TTS_OUT`; `$NAUTICE_TTS_RATE` holds `--rate`.
+If it fails — offline, say — the built-in engine speaks instead. Renders are
+cached, so a repeated message does not run the command again. Nothing below is
+bundled or required; copy what you want.
+
+**[edge-tts](https://github.com/rany2/edge-tts)** — Microsoft's neural voices,
+the best Korean here. Online, through an unofficial endpoint that may change.
+Needs `edge-tts` and `ffmpeg` (it returns MP3). `edge-tts --list-voices` lists
+voices (`ko-KR-SunHiNeural`, `ko-KR-InJoonNeural`, `en-US-AvaNeural`, …).
+
+```sh
+export NAUTICE_TTS_CMD_KO='edge-tts -v ko-KR-SunHiNeural -f /dev/stdin --write-media /dev/stdout \
+  --rate "$(awk "BEGIN { printf \"%+d%%\", ($NAUTICE_TTS_RATE - 1) * 100 }")" \
+  | ffmpeg -loglevel error -i pipe: -y "$NAUTICE_TTS_OUT"'
+```
+
+**[piper](https://github.com/OHF-Voice/piper1-gpl)** — local and fast on a CPU,
+good English, no usable Korean voice. Download a voice (`.onnx` and
+`.onnx.json`) from `rhasspy/piper-voices` on Hugging Face.
+
+```sh
+export NAUTICE_TTS_CMD_EN='piper -m ~/.local/share/piper/en_US-lessac-high.onnx \
+  --length-scale "$(awk "BEGIN { print 1 / $NAUTICE_TTS_RATE }")" -f "$NAUTICE_TTS_OUT"'
+```
+
+**Hooks must see the variables too.** Set them where the agent inherits them —
+your shell profile, or on NixOS `environment.sessionVariables` or home-manager's
+`home.sessionVariables` (Nix strings only interpolate `${`, so the commands go in
+unchanged), with `python3Packages.edge-tts`, `ffmpeg` or `piper-tts` installed.
+`nautice doctor` lists the commands it sees, and `nautice say --plan "…"` prints
+the one used as `backend_tts`. Details in [`docs/cli.md`](docs/cli.md) under
+"TTS command".
 
 ## Wiring it to an agent
 
@@ -300,7 +335,7 @@ nix build .#nautice    # includes shellcheck
 
 `NAUTICE_VOICE` `NAUTICE_VOICE_<LANG>` `NAUTICE_LANG` `NAUTICE_VOL` `NAUTICE_RATE`
 `NAUTICE_CHANNEL` `NAUTICE_CALL_MESSAGE` `NAUTICE_CACHE` `NAUTICE_SOUNDS`
-`NAUTICE_PIPER_MODEL`
+`NAUTICE_PIPER_MODEL` `NAUTICE_TTS_CMD` `NAUTICE_TTS_CMD_<LANG>`
 
 Details in [`docs/cli.md`](docs/cli.md), including which parts are a stable
 interface ("Compatibility").

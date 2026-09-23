@@ -381,6 +381,8 @@ function Write-Plan([hashtable] $o, [string] $cmd, [string] $tone, [string] $tex
     Write-Output "backend_rate=$(ConvertTo-SapiRate $rate)"
     Write-Output "backend_vol=$(ConvertTo-SapiVolume $vol)"
     Write-Output "backend_visual=$(if ($o.Hold) { 'toast' } else { 'notifyicon' })"
+    # play speaks nothing, so it has no TTS engine.
+    Write-Output "backend_tts=$(if ($text) { 'sapi' } else { '' })"
 }
 
 function Write-Status([hashtable] $o, [string] $line) {
@@ -496,6 +498,12 @@ function Invoke-Doctor([hashtable] $o) {
     } catch {
         Write-Output ("  {0,-12} cannot load System.Speech: {1}" -f 'TTS', $_.Exception.Message)
         $ok = 1
+    }
+    # NAUTICE_TTS_CMD holds a POSIX shell command; there is no sh to run it
+    # here, and a set variable must not look like it is in use.
+    $cmds = @(Get-ChildItem Env: | Where-Object { $_.Name -like 'NAUTICE_TTS_CMD*' })
+    if ($cmds.Count -gt 0) {
+        Write-Output ("  {0,-12} {1} ignored on Windows (bash side only)" -f 'TTS command', (($cmds | ForEach-Object { $_.Name }) -join ', '))
     }
     Write-Output ("  {0,-12} System.Media.SoundPlayer (no volume control; --vol applies to TTS only)" -f 'player')
     Write-Output ("  {0,-12} System.Windows.Forms.NotifyIcon (needs a desktop session)" -f 'banner')

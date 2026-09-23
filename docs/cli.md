@@ -149,6 +149,37 @@ Measured on that display (PipeWire, 12 s idle between tries): 0.03 s and 0.08 s
 still clipped, 0.15 s and more did not. Keeping PipeWire from suspending the
 sink did not help. The default leaves room for slower devices.
 
+### TTS command
+
+The built-in engines (`say`, `espeak-ng`, SAPI) are what every machine has; a
+better one can be plugged in on the bash side (macOS, Linux) as a shell command.
+`NAUTICE_TTS_CMD_<LANG>` (`NAUTICE_TTS_CMD_KO`, …) speaks one language,
+`NAUTICE_TTS_CMD` every language that has no command of its own. They take
+precedence over `NAUTICE_PIPER_MODEL` and the built-in engine.
+
+The command runs under `sh -c` and gets:
+
+| | |
+|---|---|
+| stdin | The text |
+| `NAUTICE_TTS_OUT` | Path of the WAV file to write |
+| `NAUTICE_TTS_LANG` | The resolved language (`ko`, `en`, …) |
+| `NAUTICE_TTS_RATE` | `--rate` as given, a multiplier; converting it is up to the command |
+
+It must write a WAV (RIFF/WAVE) to `NAUTICE_TTS_OUT` and exit 0. nautice adds
+the lead-in, applies `--vol` at playback and caches the file like any other
+rendering — keyed by the command, language, rate and text, so editing the
+command renders anew.
+
+**A failing command does not fail the notification.** A non-zero exit, no WAV,
+or no exit within 15 s (where `timeout` exists) prints a warning on stderr and
+the built-in engine speaks instead: a cloud engine gone offline must not cost
+the notification. `--voice` applies to the built-in engine only.
+
+`--plan` prints the engine as `backend_tts`: the variable's name
+(`NAUTICE_TTS_CMD_KO`) when a command applies, otherwise `say`, `piper`,
+`espeak-ng` or `sapi`. `nautice doctor` lists the commands that are set.
+
 ### Why these units
 
 `--vol` and `--rate` have different native units on each OS. The contract uses
@@ -235,7 +266,10 @@ Backend limits, not bugs. The conformance test allows exactly these.
   applies to TTS only; sounds play at system volume.
 - **Linux TTS quality** — `espeak-ng` is formant synthesis and rough for Korean;
   `piper` has no usable official Korean voice. `NAUTICE_PIPER_MODEL` selects a
-  model and takes precedence.
+  model and takes precedence; a TTS command takes precedence over both.
+- **TTS command** — bash side only. Its value is a POSIX shell command, which
+  Windows has no `sh` to run; `nautice doctor` there names any that are set as
+  ignored.
 - **Voice `best`** — only macOS exposes quality tiers (`(Premium)` /
   `(Enhanced)`). Elsewhere `best` equals `auto`.
 - **Queue (serialisation)** — only the bash side locks. Windows `Speak()` is
@@ -293,3 +327,4 @@ Backend limits, not bugs. The conformance test allows exactly these.
 | `NAUTICE_SOUNDS` | Bundled sound directory; if empty, `../share/sounds` next to the executable |
 | `NAUTICE_CACHE` | Cache location (bash side only); data goes in a per-version subdirectory |
 | `NAUTICE_PIPER_MODEL` | piper `.onnx` model to use on Linux |
+| `NAUTICE_TTS_CMD` `NAUTICE_TTS_CMD_<LANG>` | Shell command that renders speech (bash side only); see "TTS command" |

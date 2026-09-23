@@ -339,6 +339,68 @@ else
 fi
 echo
 
+# ── TTS command ─────────────────────────────────────────────────────────────
+# A user command renders speech on the bash side. It must get the text and
+# language, and a failing one must fall back, not lose the notification. Stubs
+# stand in for the player and espeak-ng; what reached the player is compared.
+echo "TTS command (bash side)"
+if (( have_bash )); then
+  c=$(mktemp -d); mkdir "$c/bin"
+  for p in pw-play afplay; do
+    # shellcheck disable=SC2016  # $a and $f belong to the stub
+    printf '#!/bin/sh\nfor a; do f=$a; done; cp "$f" "%s/played.wav"\n' "$c" > "$c/bin/$p"
+    chmod +x "$c/bin/$p"
+  done
+  # A fallback that is not the command's output: warn.wav instead of ok.wav.
+  cat > "$c/bin/espeak-ng" <<STUB
+#!/bin/sh
+case "\$1" in --voices) printf 'Pty Language Age/Gender VoiceName File Other\\n 2 en --/M English gmw/en\\n'; exit ;; esac
+while [ \$# -gt 0 ]; do [ "\$1" = -w ] && cp "$PWD/share/sounds/warn.wav" "\$2"; shift; done
+STUB
+  chmod +x "$c/bin/espeak-ng"
+  tts() { NAUTICE_CACHE=$c/cache NAUTICE_PREROLL=0 PATH=$c/bin:$PATH run_bash "$@"; }
+  backend_of() { tts --plan "$@" | sed -n 's/^backend_tts=//p'; }
+
+  got=$(NAUTICE_TTS_CMD_KO=x NAUTICE_TTS_CMD=y backend_of say "빌드 끝")
+  if [[ $got == NAUTICE_TTS_CMD_KO ]]; then ok "per-language command wins"
+  else bad "per-language command" "backend_tts '$got'"; fi
+  got=$(NAUTICE_TTS_CMD_KO=x NAUTICE_TTS_CMD=y backend_of say "build done")
+  if [[ $got == NAUTICE_TTS_CMD ]]; then ok "other languages use NAUTICE_TTS_CMD"
+  else bad "NAUTICE_TTS_CMD" "backend_tts '$got'"; fi
+  got=$(NAUTICE_TTS_CMD_KO=x backend_of say "build done")
+  if [[ -n $got && $got != NAUTICE_TTS_CMD* ]]; then ok "no command for the language: built-in ($got)"
+  else bad "built-in engine" "backend_tts '$got'"; fi
+
+  # shellcheck disable=SC2016  # expanded by the command's sh, not here
+  cmd='cat > "'$c'/in.txt"; echo "$NAUTICE_TTS_LANG $NAUTICE_TTS_RATE" > "'$c'/env.txt"
+       echo run >> "'$c'/runs"; cp share/sounds/ok.wav "$NAUTICE_TTS_OUT"'
+  NAUTICE_TTS_CMD_KO=$cmd tts -q say -r 1.5 "빌드 끝" >/dev/null
+  if [[ $(hash_file "$c/played.wav" 2>/dev/null) == "$(hash_file share/sounds/ok.wav)" ]]
+  then ok "the command's WAV is played"; else bad "command WAV" "the player got something else"; fi
+  if [[ $(cat "$c/in.txt" 2>/dev/null) == "빌드 끝" && $(cat "$c/env.txt" 2>/dev/null) == "ko 1.5" ]]
+  then ok "text on stdin, language and rate in the environment"
+  else bad "command input" "stdin '$(cat "$c/in.txt" 2>/dev/null)', env '$(cat "$c/env.txt" 2>/dev/null)'"; fi
+  NAUTICE_TTS_CMD_KO=$cmd tts -q say -r 1.5 "빌드 끝" >/dev/null
+  if [[ $(wc -l < "$c/runs") -eq 1 ]]; then ok "a cached render does not run the command again"
+  else bad "command cache" "ran $(wc -l < "$c/runs") times"; fi
+
+  if [[ $(uname -s) == Linux ]]; then
+    for bad_cmd in 'exit 3' 'true' ; do
+      rm -f "$c/played.wav"
+      err=$(NAUTICE_TTS_CMD_KO=$bad_cmd NAUTICE_CACHE=$c/cache NAUTICE_PREROLL=0 PATH=$c/bin:$PATH \
+        "$BASH_IMPL" -q say "빌드 실패" 2>&1 >/dev/null); rc=$?
+      if (( rc == 0 )) && [[ $err == *"NAUTICE_TTS_CMD_KO failed"* ]] \
+         && [[ $(hash_file "$c/played.wav" 2>/dev/null) == "$(hash_file share/sounds/warn.wav)" ]]
+      then ok "'$bad_cmd' falls back to espeak-ng"
+      else bad "fallback from '$bad_cmd'" "exit $rc, stderr '$err'"; fi
+    done
+  fi
+  rm -rf "$c"
+else
+  printf '  \033[33mskip\033[0m %s (%s)\n' "TTS command" "$SKIP_WHY"
+fi
+echo
+
 # ── Installed layout beside a sound theme ───────────────────────────────────
 # <prefix>/share/sounds is the XDG sound theme directory (~/.local on most
 # desktops); taking it for the bundle made every sound "no such sound".

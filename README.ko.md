@@ -130,10 +130,45 @@ nix profile remove nautice                         # 지우기
 떨어진다. 품질 등급은 노출되지 않아서 `best` 가 `auto` 와 같다.
 `nautice doctor` 의 `languages` 줄이 무엇이 있는지 알려준다.
 
-**Linux 는 한국어가 약하다.** `espeak-ng` 는 포먼트 합성이라 거칠고, `piper` 의
-공식 보이스에는 쓸 만한 한국어가 없다. 모델을 따로 구했으면
-`NAUTICE_PIPER_MODEL` 로 지정하면 그쪽을 먼저 쓴다. 그 전까지 Linux 에서는
-효과음 채널(`nautice play`)이 훨씬 믿을 만하다.
+**Linux 의 내장 음성은 거칠다**, 특히 한국어가. `espeak-ng` 는 포먼트 합성이다.
+언어마다 더 나은 엔진을 끼울 수 있다 — 아래 참고.
+
+### 더 나은 엔진 (macOS, Linux)
+
+`NAUTICE_TTS_CMD_<언어>` 는 한 언어의, `NAUTICE_TTS_CMD` 는 나머지 모든 언어의
+셸 명령이다. 명령은 stdin 으로 텍스트를 받아 `$NAUTICE_TTS_OUT` 에 WAV 를 쓴다.
+`$NAUTICE_TTS_RATE` 에는 `--rate` 가 들어 있다. 명령이 실패하면(오프라인 등) 내장
+엔진이 대신 읽는다. 렌더는 캐시되므로 같은 문구는 명령을 다시 돌리지 않는다.
+아래 어느 것도 번들되거나 필수가 아니다. 필요한 것만 복사해 쓰면 된다.
+
+**[edge-tts](https://github.com/rany2/edge-tts)** — Microsoft 의 뉴럴 음성으로,
+여기서 한국어가 가장 좋다. 비공식 엔드포인트를 쓰는 온라인 엔진이라 바뀔 수 있다.
+`edge-tts` 와 `ffmpeg` 가 필요하다(MP3 를 돌려준다). 음성 목록은
+`edge-tts --list-voices` (`ko-KR-SunHiNeural`, `ko-KR-InJoonNeural`,
+`en-US-AvaNeural`, …).
+
+```sh
+export NAUTICE_TTS_CMD_KO='edge-tts -v ko-KR-SunHiNeural -f /dev/stdin --write-media /dev/stdout \
+  --rate "$(awk "BEGIN { printf \"%+d%%\", ($NAUTICE_TTS_RATE - 1) * 100 }")" \
+  | ffmpeg -loglevel error -i pipe: -y "$NAUTICE_TTS_OUT"'
+```
+
+**[piper](https://github.com/OHF-Voice/piper1-gpl)** — 로컬에서 CPU 로도 빠르고
+영어가 좋다. 쓸 만한 한국어 음성은 없다. Hugging Face 의 `rhasspy/piper-voices`
+에서 음성(`.onnx` 와 `.onnx.json`)을 받는다.
+
+```sh
+export NAUTICE_TTS_CMD_EN='piper -m ~/.local/share/piper/en_US-lessac-high.onnx \
+  --length-scale "$(awk "BEGIN { print 1 / $NAUTICE_TTS_RATE }")" -f "$NAUTICE_TTS_OUT"'
+```
+
+**훅도 이 변수를 봐야 한다.** 에이전트가 물려받는 곳에 둔다 — 셸 프로필, NixOS
+라면 `environment.sessionVariables` 나 home-manager 의 `home.sessionVariables`
+(Nix 문자열은 `${` 만 치환하므로 명령을 그대로 넣으면 된다). 패키지는
+`python3Packages.edge-tts`, `ffmpeg`, `piper-tts` 중 필요한 것을 깐다.
+`nautice doctor` 가 보이는 명령을 나열하고, `nautice say --plan "…"` 은 쓰일
+명령을 `backend_tts` 로 찍는다. 자세한 것은 [`docs/cli.ko.md`](docs/cli.ko.md) 의
+"TTS 명령".
 
 ## 에이전트에 물리기
 
@@ -290,6 +325,6 @@ nix build .#nautice    # shellcheck 까지 돈다
 
 `NAUTICE_VOICE` `NAUTICE_VOICE_<언어>` `NAUTICE_LANG` `NAUTICE_VOL` `NAUTICE_RATE`
 `NAUTICE_CHANNEL` `NAUTICE_CALL_MESSAGE` `NAUTICE_CACHE` `NAUTICE_SOUNDS`
-`NAUTICE_PIPER_MODEL`
+`NAUTICE_PIPER_MODEL` `NAUTICE_TTS_CMD` `NAUTICE_TTS_CMD_<언어>`
 
 자세한 것은 [`docs/cli.ko.md`](docs/cli.ko.md).

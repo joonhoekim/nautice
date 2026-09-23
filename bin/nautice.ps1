@@ -45,6 +45,7 @@ $Defaults = @{
     Vol     = [double](Get-Env 'NAUTICE_VOL'  '0.6')
     Rate    = [double](Get-Env 'NAUTICE_RATE' '1.0')
     Channel = Get-Env 'NAUTICE_CHANNEL' 'sound'
+    Preroll = Get-Env 'NAUTICE_PREROLL' '0.25'
 }
 
 # Neutral on purpose: the tool is not tied to any agent. Spoken twice, so short.
@@ -286,17 +287,69 @@ function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
 function Coalesce($a, $b) { if ($null -eq $a) { return $b } else { return $a } }
 
 # ── Playback ────────────────────────────────────────────────────────────────
-# SoundPlayer has no volume: --vol applies to TTS only (docs/cli.md).
-function Invoke-Sfx([string] $path) {
-    $player = New-Object System.Media.SoundPlayer $path
-    try { $player.PlaySync() } finally { $player.Dispose() }
+# An HDMI display dropped the first ~0.1 s of a sound after a quiet spell, and
+# only silence in the same stream helped (docs/cli.md, "Lead-in silence"). So
+# the silence is spliced into the WAV bytes, as the bash side does; $null when
+# that is not possible (8-bit PCM is unsigned, so its silence is not zeros).
+# Only the first 4096 bytes are searched for the data chunk, as in bash.
+function Add-WavLead([byte[]] $b, [int] $ms) {
+    $ascii = [Text.Encoding]::ASCII
+    if ($ms -le 0 -or $b.Length -lt 12) { return $null }
+    if ($ascii.GetString($b, 0, 4) -cne 'RIFF' -or $ascii.GetString($b, 8, 4) -cne 'WAVE') { return $null }
+    $fmt = 0; $rate = 0; $align = 0; $bits = 0
+    $n = [Math]::Min($b.Length, 4096)
+    $o = 12
+    while ($o + 8 -le $n) {
+        $id = $ascii.GetString($b, $o, 4)
+        $s = [long][BitConverter]::ToUInt32($b, $o + 4)
+        if ($id -ceq 'fmt ') {
+            $fmt = [BitConverter]::ToUInt16($b, $o + 8); $rate = [BitConverter]::ToUInt32($b, $o + 16)
+            $align = [BitConverter]::ToUInt16($b, $o + 20); $bits = [BitConverter]::ToUInt16($b, $o + 22)
+        }
+        if ($id -ceq 'data') {
+            # 1 PCM, 3 float, 65534 extensible. A streamed size (0, ~4 GiB) is unknown.
+            if ($align -lt 1 -or $bits -le 8 -or @(1, 3, 65534) -notcontains $fmt) { return $null }
+            if ($s -lt 1 -or $s -gt [int]::MaxValue) { return $null }
+            $z = [int]([Math]::Floor([double]$rate * $ms / 1000 / $align) * $align)
+            $out = New-Object byte[] ($b.Length + $z)
+            [Array]::Copy($b, 0, $out, 0, $o + 8)
+            [Array]::Copy($b, $o + 8, $out, $o + 8 + $z, $b.Length - $o - 8)
+            [BitConverter]::GetBytes([uint32]([BitConverter]::ToUInt32($b, 4) + $z)).CopyTo($out, 4)
+            [BitConverter]::GetBytes([uint32]($s + $z)).CopyTo($out, $o + 4)
+            return , $out
+        }
+        $o += 8 + $s + ($s % 2)
+    }
+    return $null
 }
 
-# Repeat one unit (chime, speech, or both) --repeat times.
+# SoundPlayer has no volume: --vol applies to TTS only (docs/cli.md).
+function Invoke-Sfx([string] $path, [int] $leadMs) {
+    $lead = Add-WavLead ([IO.File]::ReadAllBytes($path)) $leadMs
+    $stream = $null
+    if ($lead) { $stream = New-Object IO.MemoryStream (, $lead); $player = New-Object System.Media.SoundPlayer $stream }
+    else       { $player = New-Object System.Media.SoundPlayer $path }
+    try { $player.PlaySync() } finally { $player.Dispose(); if ($stream) { $stream.Dispose() } }
+}
+
+function Invoke-Speak($synth, [string] $text, [int] $leadMs) {
+    if ($leadMs -le 0) { $synth.Speak($text); return }
+    # PromptBuilder takes the thread culture by default, which is Invariant here
+    # (see the top of this file); give it the voice's own.
+    $p = New-Object System.Speech.Synthesis.PromptBuilder ($synth.Voice.Culture)
+    $p.AppendBreak([TimeSpan]::FromMilliseconds($leadMs))
+    $p.AppendText($text)
+    $synth.Speak($p)
+}
+
+# Repeat one unit (chime, speech, or both) --repeat times. The lead-in goes
+# before the first sound of each repetition only.
 function Invoke-Emit([hashtable] $o, [string] $chime, $synth, [string] $text) {
+    # Round half up, as bash's awk does; [Math]::Round would round half to even.
+    $lead = [int][Math]::Floor($Preroll * 1000 + 0.5)
     for ($i = 1; $i -le $o.Repeat; $i++) {
-        if ($chime) { Invoke-Sfx $chime }
-        if ($synth) { $synth.Speak($text) }
+        if ($chime) { Invoke-Sfx $chime $lead }
+        if ($synth) { Invoke-Speak $synth $text $(if ($chime) { 0 } else { $lead }) }
         if ($i -lt $o.Repeat -and $o.Gap -gt 0) {
             Start-Sleep -Milliseconds ([int]($o.Gap * 1000))
         }
@@ -319,6 +372,7 @@ function Write-Plan([hashtable] $o, [string] $cmd, [string] $tone, [string] $tex
     Write-Output "tone=$tone"
     Write-Output "channel=$($o.Channel)"
     Write-Output "hold=$(if ($o.Hold) { 1 } else { 0 })"
+    Write-Output ("preroll={0:F3}" -f $Preroll)
     Write-Output "text=$text"
     Write-Output "lang=$(Resolve-Lang $o $text)"
     Write-Output "backend=windows"
@@ -544,6 +598,13 @@ function Format-CmdArg([string] $a) {
     $s = $a -replace '(\\*)"', '$1$1\"'
     $s = $s -replace '(\\+)$', '$1$1'
     return '"' + $s + '"'
+}
+
+# Only the sound commands use it; validated before detaching, as in bash.
+$Preroll = 0.0
+if (@('say', 'play', 'alert', 'call') -contains $o.Command) {
+    $Preroll = ConvertTo-Num $Defaults.Preroll 'NAUTICE_PREROLL'
+    Assert-Range $Preroll 0 2 'NAUTICE_PREROLL'
 }
 
 # Hooks must not block the agent. Arguments are validated before detaching, so

@@ -134,6 +134,21 @@ allows — see "Platform differences".
 OS's banner backend as `backend_visual`. On Windows `--hold` changes the backend,
 so `backend_visual` changes with it.
 
+### Lead-in silence
+
+Some outputs drop the start of a sound that follows a quiet spell: on an HDMI
+display, `say "Build finished"` after 12 s of silence played only "finished",
+and `play` can lose a short chime whole. So each repetition starts with
+`NAUTICE_PREROLL` seconds of silence (**default 0.25**, `0` turns it off,
+0 – 2) — in the same stream as the sound, since only that helped.
+
+It goes before the first sound of a repetition only: `alert` gets it before the
+chime, not between chime and speech. `--plan` prints it as `preroll`.
+
+Measured on that display (PipeWire, 12 s idle between tries): 0.03 s and 0.08 s
+still clipped, 0.15 s and more did not. Keeping PipeWire from suspending the
+sink did not help. The default leaves room for slower devices.
+
 ### Why these units
 
 `--vol` and `--rate` have different native units on each OS. The contract uses
@@ -211,6 +226,11 @@ errors and `doctor`, and the cache layout.
 
 Backend limits, not bugs. The conformance test allows exactly these.
 
+- **Lead-in on sounds that are not PCM WAV** — silence is spliced into WAV
+  files, which covers every bundled sound. macOS system sounds (`.aiff`) and
+  8-bit WAVs, where silence is not zero bytes, play without it. Speech gets it
+  from the synthesiser on macOS (`say`'s `[[slnc]]`) and Windows
+  (`PromptBuilder.AppendBreak`).
 - **Windows sound volume** — `System.Media.SoundPlayer` has no volume. `--vol`
   applies to TTS only; sounds play at system volume.
 - **Linux TTS quality** — `espeak-ng` is formant synthesis and rough for Korean;
@@ -269,6 +289,7 @@ Backend limits, not bugs. The conformance test allows exactly these.
 | `NAUTICE_VOL` `NAUTICE_RATE` | Default volume and rate |
 | `NAUTICE_CHANNEL` | Default channel (`sound` / `visual` / `both`) |
 | `NAUTICE_CALL_MESSAGE` | Default text of `call` |
+| `NAUTICE_PREROLL` | Seconds of silence before each repetition; see "Lead-in silence" |
 | `NAUTICE_SOUNDS` | Bundled sound directory; if empty, `../share/sounds` next to the executable |
 | `NAUTICE_CACHE` | Cache location (bash side only); data goes in a per-version subdirectory |
 | `NAUTICE_PIPER_MODEL` | piper `.onnx` model to use on Linux |

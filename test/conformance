@@ -9,7 +9,7 @@ BASH_IMPL=bin/nautice
 PS_IMPL=bin/nautice.ps1
 
 # Fields that must match across OSes (voice and backend_* legitimately differ).
-SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|channel|hold|text|lang)='
+SHARED_FIELDS='^(command|voice_req|vol|rate|repeat|gap|tone|channel|hold|preroll|text|lang)='
 
 pass=0 fail=0
 ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; pass=$((pass + 1)); }
@@ -36,6 +36,7 @@ fi
 [[ -n $PWSH && -f $PS_IMPL ]] && have_ps=1
 
 run_bash() { "$BASH_IMPL" "$@" 2>&1; }
+hash_file() { { sha1sum "$1" 2>/dev/null || shasum "$1"; } | cut -d' ' -f1; }
 run_ps() {
   case $PWSH in
     nix-pwsh) nix shell nixpkgs#powershell -c pwsh -NoProfile -File "$PS_IMPL" "$@" 2>&1 ;;
@@ -106,6 +107,9 @@ plan_case 'hold on'             say -c visual --hold "test text"
 plan_case 'hold + both'         alert -c both --hold -t warn "Disk is full"
 # With no banner there is nothing to hold: --hold is ignored, not rejected.
 plan_case 'hold harmless with sound' say --hold "test text"
+# Lead-in silence comes from the environment only; the default is 0.25.
+NAUTICE_PREROLL=0   plan_case 'preroll off'  say "test text"
+NAUTICE_PREROLL=1.5 plan_case 'preroll set'  play ok
 
 # Text from a pipe. Windows must read stdin as UTF-8 itself; decoding with the
 # console code page garbles Korean.
@@ -212,6 +216,10 @@ reject_case '--repeat decimal' say -n 2.7 x
 # Comma decimals and trailing junk must not slip through as some number.
 reject_case '--vol comma'      say -V 0,4 x
 reject_case '--vol trailing'   say -V 0.4abc x
+NAUTICE_PREROLL=abc reject_case 'NAUTICE_PREROLL letters' say x
+NAUTICE_PREROLL=3   reject_case 'NAUTICE_PREROLL range'   play ok
+# Checked before detaching, or a hook would lose every notification silently.
+NAUTICE_PREROLL=abc reject_case 'NAUTICE_PREROLL with --async' say -a x
 echo
 
 # ── Help lists every contract option ────────────────────────────────────────
@@ -328,6 +336,38 @@ STUB
   rm -rf "$c"
 else
   printf '  \033[33mskip\033[0m %s\n' "Linux voices (not Linux)"
+fi
+echo
+
+# ── Lead-in silence is spliced alike ────────────────────────────────────────
+# Both sides rewrite WAV headers with their own parser; a size off by one byte
+# plays on one OS and fails or clicks on the other. The bash side's output is
+# caught with a stub player, the ps1 function is loaded on its own.
+echo "Lead-in silence is spliced alike"
+if (( have_bash && have_ps )); then
+  c=$(mktemp -d); mkdir "$c/bin"
+  for p in pw-play afplay; do
+    # shellcheck disable=SC2016  # $a and $f belong to the stub
+    printf '#!/bin/sh\nfor a; do f=$a; done; cp "$f" "%s/bash.wav"\n' "$c" > "$c/bin/$p"
+    chmod +x "$c/bin/$p"
+  done
+  cat > "$c/lead.ps1" <<'PS'
+param($in, $out)
+$src = Get-Content -Raw bin/nautice.ps1
+. ([ScriptBlock]::Create([regex]::Match($src, '(?ms)^function Add-WavLead.*?^}').Value))
+[IO.File]::WriteAllBytes($out, (Add-WavLead ([IO.File]::ReadAllBytes((Resolve-Path $in))) 250))
+PS
+  NAUTICE_CACHE=$c/cache NAUTICE_PREROLL=0.25 PATH=$c/bin:$PATH run_bash -q play ok >/dev/null
+  case $PWSH in
+    nix-pwsh) nix shell nixpkgs#powershell -c pwsh -NoProfile -File "$c/lead.ps1" share/sounds/ok.wav "$c/ps.wav" ;;
+    *)        "$PWSH" -NoProfile -File "$c/lead.ps1" share/sounds/ok.wav "$c/ps.wav" ;;
+  esac
+  a=$(hash_file "$c/bash.wav") b=$(hash_file "$c/ps.wav") o=$(hash_file share/sounds/ok.wav)
+  if [[ -n $a && $a == "$b" && $a != "$o" ]]; then ok "ok.wav with 250 ms: same bytes on both"
+  else bad "lead-in bytes" "bash ${a:-(none)} / ps ${b:-(none)} / original $o"; fi
+  rm -rf "$c"
+else
+  printf '  \033[33mskip\033[0m %s (%s)\n' "lead-in bytes" "$SKIP_WHY"
 fi
 echo
 

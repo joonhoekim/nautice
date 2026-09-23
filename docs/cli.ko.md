@@ -132,6 +132,21 @@ finished` 는 같은 문자다. 그래서 OS 로캘(`LANG`·`LC_MESSAGES`, Windo
 배너 백엔드를 `backend_visual` 로 찍는다. `--hold` 는 백엔드를 바꾸기도 하므로
 (Windows) `backend_visual` 이 같이 달라질 수 있다.
 
+### 앞머리 무음
+
+조용하던 출력 장치는 다음 소리의 앞부분을 먹기도 한다. HDMI 디스플레이에서 12 초
+쉰 뒤 `say "Build finished"` 는 "finished" 만 들렸고, `play` 는 짧은 효과음을 통째로
+잃을 수 있다. 그래서 반복마다 `NAUTICE_PREROLL` 초의 무음으로 시작한다
+(**기본 0.25**, `0` 이면 끈다, 0 – 2). 효과가 있었던 건 소리와 **같은 스트림** 안의
+무음뿐이었다.
+
+반복 단위의 첫 소리 앞에만 붙는다. `alert` 는 효과음 앞에 붙고, 효과음과 음성
+사이에는 붙지 않는다. `--plan` 은 `preroll` 로 찍는다.
+
+그 디스플레이에서 잰 값 (PipeWire, 시도 사이 12 초 대기): 0.03 초와 0.08 초는 여전히
+잘렸고 0.15 초부터는 온전했다. PipeWire 가 싱크를 절전시키지 않게 해도 소용없었다.
+기본값은 더 느린 장치를 위한 여유를 둔 것이다.
+
 ### 단위를 왜 이렇게 정했나
 
 `--vol` 과 `--rate` 는 OS 마다 원래 단위가 다르다. 계약은 OS 중립 단위로 두고
@@ -203,6 +218,10 @@ bash 쪽은 렌더한 음성과 보이스 해석 결과(보이스 표, 언어별
 
 이건 버그가 아니라 백엔드의 한계다. 적합성 테스트도 이만큼은 봐준다.
 
+- **PCM WAV 가 아닌 소리의 앞머리 무음** — 무음은 WAV 파일에 이어 붙이므로 번들
+  효과음은 모두 해당된다. macOS 시스템 효과음(`.aiff`)과, 무음이 0 바이트가 아닌
+  8 비트 WAV 는 무음 없이 재생된다. 음성은 합성기가 붙인다 — macOS 는 `say` 의
+  `[[slnc]]`, Windows 는 `PromptBuilder.AppendBreak`.
 - **Windows 효과음 볼륨** — `System.Media.SoundPlayer` 에 볼륨이 없다. `--vol` 은
   TTS 에만 걸리고 효과음은 시스템 볼륨으로 난다.
 - **Linux TTS 품질** — `espeak-ng` 는 포먼트 합성이라 한국어가 많이 거칠다.
@@ -261,6 +280,7 @@ bash 쪽은 렌더한 음성과 보이스 해석 결과(보이스 표, 언어별
 | `NAUTICE_VOL` `NAUTICE_RATE` | 기본 볼륨·배속 |
 | `NAUTICE_CHANNEL` | 기본 채널 (`sound` / `visual` / `both`) |
 | `NAUTICE_CALL_MESSAGE` | `call` 의 기본 문구 |
+| `NAUTICE_PREROLL` | 반복마다 앞에 두는 무음(초). "앞머리 무음" 참고 |
 | `NAUTICE_SOUNDS` | 번들 효과음 디렉터리. 비면 실행 파일 옆의 `../share/sounds` 를 찾는다 |
 | `NAUTICE_CACHE` | 캐시 위치 (bash 쪽만 쓴다). 데이터는 버전별 하위 디렉터리에 둔다 |
 | `NAUTICE_PIPER_MODEL` | Linux 에서 쓸 piper `.onnx` 경로 |

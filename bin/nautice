@@ -17,6 +17,7 @@ VERSION=0.4.0
 : "${NAUTICE_RATE:=1.0}"
 : "${NAUTICE_PIPER_MODEL:=}"
 : "${NAUTICE_CHANNEL:=sound}"
+: "${NAUTICE_PREROLL:=0.25}"
 # Neutral on purpose: the tool is not tied to any agent. Users can name theirs.
 : "${NAUTICE_CALL_MESSAGE:=Your agent is calling}"
 
@@ -319,14 +320,72 @@ resolve_voice() {
   printf '%s' "$v"
 }
 
+# ── Lead-in silence ─────────────────────────────────────────────────────────
+# An HDMI display dropped the first ~0.1 s of a sound after a quiet spell, and
+# only silence in the same stream helped (docs/cli.md, "Lead-in silence"). So
+# the silence is spliced into a copy of the WAV rather than played before it.
+preroll_ms() { awk -v p="$NAUTICE_PREROLL" 'BEGIN { printf "%d", p * 1000 + 0.5 }'; }
+
+# Four bytes, little-endian, as octal escapes: printf has no binary format.
+le32() {
+  local i fmt=''
+  for i in 0 8 16 24; do fmt+=$(printf '\\%03o' $(($1 >> i & 255))); done
+  # shellcheck disable=SC2059  # the format is nothing but those escapes
+  printf "$fmt"
+}
+
+# "<data chunk offset> <data size> <RIFF size> <bytes of silence>", or nothing
+# when silence is not zero bytes (8-bit PCM is unsigned) or the file is not WAV.
+wav_layout() {
+  od -An -tu1 -v -N 4096 "$1" | awk -v ms="$2" '
+    function le(o, k,   v, j) { v = 0; for (j = k - 1; j >= 0; j--) v = v * 256 + b[o + j]; return v }
+    function id(o) { return sprintf("%c%c%c%c", b[o], b[o + 1], b[o + 2], b[o + 3]) }
+    { for (i = 1; i <= NF; i++) b[n++] = $i }
+    END {
+      if (n < 12 || id(0) != "RIFF" || id(8) != "WAVE") exit
+      for (o = 12; o + 8 <= n; o += 8 + s + s % 2) {
+        s = le(o + 4, 4)
+        if (id(o) == "fmt ") { fmt = le(o + 8, 2); rate = le(o + 16, 4); align = le(o + 20, 2); bits = le(o + 22, 2) }
+        if (id(o) != "data") continue
+        # 1 PCM, 3 float, 65534 extensible. A streamed size (0, ~4 GiB) is unknown.
+        if (align < 1 || bits <= 8 || (fmt != 1 && fmt != 3 && fmt != 65534)) exit
+        if (s < 1 || s > 2147483647) exit
+        printf "%d %d %d %d\n", o, s, le(4, 4), int(rate * ms / 1000 / align) * align
+        exit
+      }
+    }'
+}
+
+# A copy of a WAV that starts with $2 ms of silence, cached by content; the file
+# itself when that is not possible — a clipped sound beats no sound.
+wav_lead() {
+  local src=$1 ms=$2 out lay off size riff z
+  (( ms > 0 )) || { printf '%s' "$src"; return; }
+  out="$CACHE_DIR/$({ printf 'lead|%s|' "$ms"; cat "$src"; } | hash_stdin | cut -d' ' -f1).wav"
+  if [[ ! -s $out ]]; then
+    lay=$(wav_layout "$src" "$ms")
+    [[ -n $lay ]] || { printf '%s' "$src"; return; }
+    read -r off size riff z <<<"$lay"
+    mkdir -p "$CACHE_DIR"
+    # head before tail: tail | head would die of SIGPIPE under pipefail.
+    { head -c 4 "$src"; le32 $((riff + z))
+      head -c $((off + 4)) "$src" | tail -c +9; le32 $((size + z))
+      head -c "$z" /dev/zero; tail -c +$((off + 9)) "$src"; } > "$out.tmp"
+    mv -f "$out.tmp" "$out"
+  fi
+  printf '%s' "$out"
+}
+
 # ── TTS rendering ───────────────────────────────────────────────────────────
 # Neither say nor espeak-ng takes a playback volume, so speech is rendered to a
 # file and played by the audio player; caching the file skips re-synthesis.
 wpm_for() { awk -v m="$1" -v b="$BASE_WPM" 'BEGIN { printf "%d", m * b }'; }
 
+# $4 is the lead-in in ms. say writes AIFF, so on macOS the synthesiser adds it.
 tts_render() {
-  local voice=$1 rate=$2 text=$3 key path ext=aiff
+  local voice=$1 rate=$2 text=$3 lead=$4 key path ext=aiff
   [[ $PLATFORM == linux ]] && ext=wav
+  [[ $PLATFORM == macos ]] && (( lead > 0 )) && text="[[slnc $lead]] $text"
   key=$(printf '%s|%s|%s|%s' "$PLATFORM" "$voice" "$rate" "$text" | hash_stdin | cut -d' ' -f1)
   path="$CACHE_DIR/$key.$ext"
   if [[ ! -s $path ]]; then
@@ -350,6 +409,7 @@ tts_render() {
         mv -f "$path.tmp" "$path" ;;
     esac
   fi
+  [[ $PLATFORM == linux ]] && path=$(wav_lead "$path" "$lead")
   printf '%s' "$path"
 }
 
@@ -440,6 +500,7 @@ print_plan() {
   printf 'tone=%s\n' "$tone"
   printf 'channel=%s\n' "$CHANNEL"
   printf 'hold=%s\n' "$OPT_HOLD"
+  printf 'preroll=%.3f\n' "$NAUTICE_PREROLL"
   printf 'text=%s\n' "$text"
   printf 'lang=%s\n' "$lang"
   printf 'backend=%s\n' "$PLATFORM"
@@ -466,7 +527,7 @@ cmd_say() {
   maybe_banner "$text"
   if [[ $CHANNEL == visual ]]; then say_status "say banner only"; return 0; fi
   voice=$(resolve_voice "$(resolve_lang "$text")")
-  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
+  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text" "$(preroll_ms)")
   say_status "say x$OPT_REPEAT [$voice]$(chan_note)"
   with_lock emit "" "$speech"
 }
@@ -478,6 +539,7 @@ cmd_play() {
   [[ $CHANNEL == sound ]] || die "play has no text for a banner (use --channel sound)"
   file=$(sfx_resolve "$1")
   [[ $OPT_PLAN == 1 ]] && { print_plan play '' "$1" ''; return 0; }
+  file=$(wav_lead "$file" "$(preroll_ms)")
   say_status "play x$OPT_REPEAT [$1]"
   with_lock emit "$file" ""
 }
@@ -493,8 +555,8 @@ cmd_alert() {
   maybe_banner "$text"
   if [[ $CHANNEL == visual ]]; then say_status "$CMD_NAME banner only"; return 0; fi
   voice=$(resolve_voice "$(resolve_lang "$text")")
-  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text")
-  chime=$(sfx_resolve "${OPT_TONE:-ask}")
+  speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text" 0)
+  chime=$(wav_lead "$(sfx_resolve "${OPT_TONE:-ask}")" "$(preroll_ms)")
   say_status "alert x$OPT_REPEAT [$voice]$(chan_note)"
   with_lock emit "$chime" "$speech"
 }
@@ -759,6 +821,7 @@ detach() {
 cmd=${1:-}; [[ $# -gt 0 ]] && shift
 case $cmd in
   say|play|alert|call)
+    check_num NAUTICE_PREROLL "$NAUTICE_PREROLL" 0 2
     if [[ $OPT_ASYNC == 1 ]]; then detach "$cmd" "$@"; exit 0; fi
     cache_prune "$VERSION"
     "cmd_$cmd" "$@" ;;

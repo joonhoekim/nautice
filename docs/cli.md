@@ -324,7 +324,7 @@ Backend limits, not bugs. The conformance test allows exactly these.
 | `NAUTICE_CHANNEL` | Default channel (`sound` / `visual` / `both`) |
 | `NAUTICE_CALL_MESSAGE` | Default text of `call` |
 | `NAUTICE_PREROLL` | Seconds of silence before each repetition; see "Lead-in silence" |
-| `NAUTICE_SOUNDS` | Bundled sound directory; if empty, `../share/sounds` next to the executable |
+| `NAUTICE_SOUNDS` | Bundled sound directory; if empty, `../share/nautice/sounds` next to the executable, then `../share/sounds` |
 | `NAUTICE_CACHE` | Cache location (bash side only); data goes in a per-version subdirectory |
 | `NAUTICE_PIPER_MODEL` | piper `.onnx` model to use on Linux |
 | `NAUTICE_TTS_CMD` `NAUTICE_TTS_CMD_<LANG>` | Shell command that renders speech (bash side only); see "TTS command" |

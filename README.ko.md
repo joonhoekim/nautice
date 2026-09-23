@@ -164,8 +164,19 @@ export NAUTICE_TTS_CMD_EN='piper -m ~/.local/share/piper/en_US-lessac-high.onnx 
 
 **훅도 이 변수를 봐야 한다.** 에이전트가 물려받는 곳에 둔다 — 셸 프로필, NixOS
 라면 `environment.sessionVariables` 나 home-manager 의 `home.sessionVariables`
-(Nix 문자열은 `${` 만 치환하므로 명령을 그대로 넣으면 된다). 패키지는
-`python3Packages.edge-tts`, `ffmpeg`, `piper-tts` 중 필요한 것을 깐다.
+다. **Nix 에서는 명령을 그대로 넣지 말고 스크립트를 가리키게 한다.** 둘 다
+`export NAME="값"` 을 이스케이프 없이 쓰므로, 레시피의 따옴표와 `$(…)` 가
+로그인할 때 한 번 실행되어 명령이 깨진다. 실패는 조용하다 — 내장 엔진이 대신
+말하고 경고는 stderr 로만 간다.
+
+```nix
+home.sessionVariables.NAUTICE_TTS_CMD_KO = pkgs.writeShellScript "nautice-tts-ko" ''
+  ${pkgs.python3Packages.edge-tts}/bin/edge-tts -v ko-KR-SunHiNeural -f /dev/stdin --write-media /dev/stdout \
+    --rate "$(awk "BEGIN { printf \"%+d%%\", ($NAUTICE_TTS_RATE - 1) * 100 }")" \
+    | ${pkgs.ffmpeg}/bin/ffmpeg -loglevel error -i pipe: -y "$NAUTICE_TTS_OUT"
+'';
+```
+
 `nautice doctor` 가 보이는 명령을 나열하고, `nautice say --plan "…"` 은 쓰일
 명령을 `backend_tts` 로 찍는다. 자세한 것은 [`docs/cli.ko.md`](docs/cli.ko.md) 의
 "TTS 명령".

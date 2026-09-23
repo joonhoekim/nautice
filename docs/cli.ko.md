@@ -312,7 +312,7 @@ bash 쪽은 렌더한 음성과 보이스 해석 결과(보이스 표, 언어별
 | `NAUTICE_CHANNEL` | 기본 채널 (`sound` / `visual` / `both`) |
 | `NAUTICE_CALL_MESSAGE` | `call` 의 기본 문구 |
 | `NAUTICE_PREROLL` | 반복마다 앞에 두는 무음(초). "앞머리 무음" 참고 |
-| `NAUTICE_SOUNDS` | 번들 효과음 디렉터리. 비면 실행 파일 옆의 `../share/sounds` 를 찾는다 |
+| `NAUTICE_SOUNDS` | 번들 효과음 디렉터리. 비면 실행 파일 옆의 `../share/nautice/sounds`, 그다음 `../share/sounds` 를 찾는다 |
 | `NAUTICE_CACHE` | 캐시 위치 (bash 쪽만 쓴다). 데이터는 버전별 하위 디렉터리에 둔다 |
 | `NAUTICE_PIPER_MODEL` | Linux 에서 쓸 piper `.onnx` 경로 |
 | `NAUTICE_TTS_CMD` `NAUTICE_TTS_CMD_<언어>` | 음성을 렌더하는 셸 명령 (bash 쪽만). "TTS 명령" 참고 |

@@ -164,8 +164,19 @@ export NAUTICE_TTS_CMD_EN='piper -m ~/.local/share/piper/en_US-lessac-high.onnx 
 
 **Hooks must see the variables too.** Set them where the agent inherits them —
 your shell profile, or on NixOS `environment.sessionVariables` or home-manager's
-`home.sessionVariables` (Nix strings only interpolate `${`, so the commands go in
-unchanged), with `python3Packages.edge-tts`, `ffmpeg` or `piper-tts` installed.
+`home.sessionVariables`. **On Nix, point the variable at a script** instead of
+pasting the command: both write `export NAME="value"` without escaping, so the
+recipe's quotes and `$(…)` run once at login and leave a broken command. The
+failure is silent: the built-in engine speaks and the warning goes to stderr.
+
+```nix
+home.sessionVariables.NAUTICE_TTS_CMD_KO = pkgs.writeShellScript "nautice-tts-ko" ''
+  ${pkgs.python3Packages.edge-tts}/bin/edge-tts -v ko-KR-SunHiNeural -f /dev/stdin --write-media /dev/stdout \
+    --rate "$(awk "BEGIN { printf \"%+d%%\", ($NAUTICE_TTS_RATE - 1) * 100 }")" \
+    | ${pkgs.ffmpeg}/bin/ffmpeg -loglevel error -i pipe: -y "$NAUTICE_TTS_OUT"
+'';
+```
+
 `nautice doctor` lists the commands it sees, and `nautice say --plan "…"` prints
 the one used as `backend_tts`. Details in [`docs/cli.md`](docs/cli.md) under
 "TTS command".

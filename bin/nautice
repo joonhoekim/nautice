@@ -8,7 +8,7 @@ set -euo pipefail
 if [[ -n ${LC_ALL:-} ]]; then export LC_CTYPE="$LC_ALL"; unset LC_ALL; fi
 export LC_NUMERIC=C
 
-VERSION=0.4.2
+VERSION=0.4.3
 
 : "${NAUTICE_CACHE:=${XDG_CACHE_HOME:-$HOME/.cache}/nautice}"
 : "${NAUTICE_VOICE:=auto}"

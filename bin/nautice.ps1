@@ -21,7 +21,7 @@ $ErrorActionPreference = 'Stop'
 $SystemCulture = [Globalization.CultureInfo]::CurrentCulture
 [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
 
-$VERSION = '0.4.2'
+$VERSION = '0.4.3'
 
 # SAPI Rate is -10..10 and speed is roughly 3^(Rate/10); rate 1.0 is Rate 0.
 $RateBase = 3

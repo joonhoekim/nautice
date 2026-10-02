@@ -268,8 +268,8 @@ https://github.com/joonhoekim/nautice 의 설치 한 줄을 내가 먼저 돌려
 에이전트를 막지 않도록 **반드시 `-a`** 를 붙인다. Windows 에서는 `command` 를
 `nautice.cmd call -a -q` 로 적는다. **`say` 와 `alert` 에는 문구를 꼭 준다:**
 문구가 없으면 stdin 을 읽는데, 훅에서는 그게 이벤트 JSON 이라 그대로 소리 내어
-읽는다. 자리를 비울 때가 많으면 `-c both --hold` 를
-붙인다 — 배너가 지울 때까지 남는다.
+읽는다. 자리를 비울 때가 많으면 `-c both --hold` 를 붙인다 — 배너가 지울
+때까지 남는다.
 
 훅 대신 에이전트가 판단해서 부르게 하려면 지침 파일(`AGENTS.md` · `CLAUDE.md`
 등)에 적는다.

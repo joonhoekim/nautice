@@ -271,8 +271,9 @@ for other agents, adapt the names to their conventions. More in
 
 **Always pass `-a`** so the agent is not blocked. On Windows write
 `nautice.cmd call -a -q`. **Always give `say` and `alert` their text:** without
-one they read stdin, which in a hook is the event's JSON, and read it aloud. If you are often away, add `-c both --hold` so the
-banner stays until dismissed.
+one they read stdin, which in a hook is the event's JSON, and read it aloud.
+If you are often away, add `-c both --hold` so the banner stays until
+dismissed.
 
 To let the agent decide instead of using hooks, add this to its instructions
 file (`AGENTS.md`, `CLAUDE.md`, …):

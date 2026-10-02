@@ -21,6 +21,9 @@ They can be combined.
 
 - **Without `-a` the agent blocks until the sound ends.** Always use it in hooks.
 - `-q` suppresses the status line; hook output goes to a log, so use it too.
+- **Always give `say` and `alert` their text.** Without one they read stdin, and
+  a hook's stdin is the event's JSON — `nautice say -a -q` would read it aloud.
+  `call` is safe: it has a default text.
 - On Windows, write `nautice.cmd` instead of `nautice`.
 - If you are often away, add `-c both --hold`: the banner stays until dismissed.
 

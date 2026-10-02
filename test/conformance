@@ -35,6 +35,14 @@ elif command -v nix >/dev/null 2>&1 && [[ ${NAUTICE_TEST_NIX_PWSH:-1} == 1 ]]; t
 fi
 [[ -n $PWSH && -f $PS_IMPL ]] && have_ps=1
 
+# The caller's settings change what the cases see: a NAUTICE_TTS_CMD_EN makes
+# English plans name the command, NAUTICE_VOICE or NAUTICE_LANG change every
+# plan. Cases set what they need on their own command line. NAUTICE_TEST_* are
+# this script's own switches.
+for v in ${!NAUTICE_*}; do
+  [[ $v == NAUTICE_TEST_* ]] || unset "$v"
+done
+
 run_bash() { "$BASH_IMPL" "$@" 2>&1; }
 hash_file() { { sha1sum "$1" 2>/dev/null || shasum "$1"; } | cut -d' ' -f1; }
 run_ps() {

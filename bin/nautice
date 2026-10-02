@@ -251,6 +251,7 @@ voice_table() {
   # Without espeak-ng there are no voices, whatever a run with it cached (a nix
   # wrapper and a plain install share the cache).
   if [[ $PLATFORM == linux ]] && ! command -v espeak-ng >/dev/null 2>&1; then return 0; fi
+  if [[ $PLATFORM == macos ]] && ! command -v say >/dev/null 2>&1; then return 0; fi
   if [[ ! -s $f ]]; then
     mkdir -p "$CACHE_DIR"
     case $PLATFORM in
@@ -436,7 +437,9 @@ wpm_for() { awk -v m="$1" -v b="$BASE_WPM" 'BEGIN { printf "%d", m * b }'; }
 # The engine that speaks a language: a user command (NAUTICE_TTS_CMD_<LANG>, then
 # NAUTICE_TTS_CMD, printed as the variable's name), else the built-in one.
 builtin_engine() {
-  if   [[ $PLATFORM == macos ]]; then printf say
+  # say ships with macOS, but a PATH without /usr/bin (a hook, a sandbox)
+  # hides it; it is then missing like any other engine.
+  if   [[ $PLATFORM == macos ]]; then command -v say >/dev/null 2>&1 && printf say
   elif [[ -n $NAUTICE_PIPER_MODEL ]]; then printf piper
   elif command -v espeak-ng >/dev/null 2>&1; then printf espeak-ng
   fi
@@ -638,7 +641,8 @@ read_text() {
 speech_missing() {
   [[ $(tts_engine "$1") == NAUTICE_TTS_CMD* ]] && return 0
   case $(builtin_engine) in
-    '')    printf 'no TTS backend (install espeak-ng, or set NAUTICE_TTS_CMD or NAUTICE_PIPER_MODEL)' ;;
+    '')    if [[ $PLATFORM == macos ]]; then printf 'no TTS backend (say is not on PATH; or set NAUTICE_TTS_CMD)'
+           else printf 'no TTS backend (install espeak-ng, or set NAUTICE_TTS_CMD or NAUTICE_PIPER_MODEL)'; fi ;;
     # builtin_engine names piper for the model alone; the binary is checked
     # here so --async does not detach a child that dies on it.
     piper) command -v piper >/dev/null 2>&1 || printf 'NAUTICE_PIPER_MODEL is set but piper is not installed' ;;

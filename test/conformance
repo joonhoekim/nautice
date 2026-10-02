@@ -487,11 +487,15 @@ if (( have_bash )); then
   else bad "both --async without a banner" "exit $rc, stderr '$err'"; fi
 
   # No TTS engine: a banner backend is there (a stub that records), speech is
-  # not. The banner and the chime need no TTS, so they still arrive.
+  # not. The banner and the chime need no TTS, so they still arrive. Each OS
+  # has its own backend: notify-send takes the text last, osascript as $2
+  # with the script on stdin. On macOS say lives in /usr/bin, off this PATH.
   mkdir "$c/nb"
   # shellcheck disable=SC2016  # $a and $t belong to the stub
   printf '#!/bin/sh\nfor a; do t=$a; done; echo "$t" >> "%s/banner.txt"\n' "$c" > "$c/nb/notify-send"
-  chmod +x "$c/nb/notify-send"
+  # shellcheck disable=SC2016  # $2 belongs to the stub
+  printf '#!/bin/sh\ncat >/dev/null; echo "$2" >> "%s/banner.txt"\n' "$c" > "$c/nb/osascript"
+  chmod +x "$c/nb/notify-send" "$c/nb/osascript"
   notts() { NAUTICE_CACHE=$c/cache NAUTICE_PREROLL=0 PATH=$c/bin:$c/nb:$c/min "$BASH_IMPL" -q "$@"; }
   # Waits up to 5 s for a detached child to leave a file behind.
   wait_for() { local _; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [[ -s $1 ]] && return 0; sleep 0.25; done; return 1; }
@@ -545,18 +549,24 @@ if (( have_bash )); then
     else bad "failing banner, call --async -c both" "exit $rc, stderr '$err'"; fi
   fi
   # A model without the piper binary is no engine either; the child would die.
-  err=$(NAUTICE_PIPER_MODEL=/nonexistent.onnx notts say -a "fresh text" 2>&1 >/dev/null); rc=$?
-  if (( rc == 1 )) && [[ $err == *piper* ]]; then ok "piper model without piper: --async exits 1"
-  else bad "piper model without piper" "exit $rc, stderr '$err'"; fi
+  # NAUTICE_PIPER_MODEL is read on Linux only (docs/cli.md).
+  if [[ $(uname -s) != Linux ]]; then
+    printf '  \033[33mskip\033[0m %s (%s)\n' "piper model without piper" "NAUTICE_PIPER_MODEL is Linux only"
+  else
+    err=$(NAUTICE_PIPER_MODEL=/nonexistent.onnx notts say -a "fresh text" 2>&1 >/dev/null); rc=$?
+    if (( rc == 1 )) && [[ $err == *piper* ]]; then ok "piper model without piper: --async exits 1"
+    else bad "piper model without piper" "exit $rc, stderr '$err'"; fi
+  fi
   rm -rf "$c"
 else
   printf '  \033[33mskip\033[0m %s (%s)\n' "missing backends" "$SKIP_WHY"
 fi
 # Windows caps the child's command line; longer text must exit 1, not vanish.
-# Without System.Speech (pwsh off Windows) call degrades to its chime and
-# still reaches the check.
+# The text goes in on stdin: as an argument it would hit the same cap on the
+# way in (Git Bash: "Argument list too long"). Without System.Speech (pwsh off
+# Windows) alert degrades to its chime and still reaches the check.
 if (( have_ps )); then
-  msg=$(run_ps call -a "$(head -c 40000 /dev/zero | tr '\0' a)" 2>&1 | grep -v 'no speech' | head -1); rc=${PIPESTATUS[0]}
+  msg=$(head -c 40000 /dev/zero | tr '\0' a | run_ps alert -a -c sound 2>&1 | grep -v 'no speech' | head -1; exit "${PIPESTATUS[2]}"); rc=$?
   if (( rc == 1 )) && [[ $msg == *"too long"* ]]; then ok "ps --async: text over the command-line cap exits 1"
   else bad "ps --async long text" "exit $rc, '$msg'"; fi
 fi

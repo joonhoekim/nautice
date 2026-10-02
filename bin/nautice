@@ -631,8 +631,12 @@ read_text() {
 # only at playback.
 speech_missing() {
   [[ $(tts_engine "$1") == NAUTICE_TTS_CMD* ]] && return 0
-  [[ -n $(builtin_engine) ]] && return 0
-  printf 'no TTS backend (install espeak-ng, or set NAUTICE_TTS_CMD or NAUTICE_PIPER_MODEL)'
+  case $(builtin_engine) in
+    '')    printf 'no TTS backend (install espeak-ng, or set NAUTICE_TTS_CMD or NAUTICE_PIPER_MODEL)' ;;
+    # builtin_engine names piper for the model alone; the binary is checked
+    # here so --async does not detach a child that dies on it.
+    piper) command -v piper >/dev/null 2>&1 || printf 'NAUTICE_PIPER_MODEL is set but piper is not installed' ;;
+  esac
 }
 
 # The voice for the built-in engine. When a TTS command speaks the language,

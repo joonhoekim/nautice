@@ -115,12 +115,12 @@ nautice exits 1 afterwards:
 | TTS engine | `alert` / `call`: the chime, and with `both` the banner. `say` with `both`: the banner |
 
 A TTS engine is a TTS command for the language (see "TTS command"), the
-built-in engine (`say`, `piper` with its model, `espeak-ng`), or on Windows
-`System.Speech` with at least one voice. When nothing is left — `visual`
-without a banner backend, `say` on the `sound` channel without a TTS engine —
-nautice exits 1 before anything happens. `--async` decides all this before
-detaching, so the warning and the exit code are the same with it; the child
-gets only what is left.
+built-in engine (`say`, `espeak-ng`, or `piper` when `NAUTICE_PIPER_MODEL` is
+set and piper is installed), or on Windows `System.Speech` with at least one
+voice. When nothing is left — `visual` without a banner backend, `say` on the
+`sound` channel without a TTS engine — nautice exits 1 before anything
+happens. `--async` decides all this before detaching, so the warning and the
+exit code are the same with it; the child gets only what is left.
 
 **Banners ignore `--repeat`:** shown once however many repetitions — copies
 piling up in the notification center are unreadable. `--repeat` and `--gap`

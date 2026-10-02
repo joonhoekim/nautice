@@ -503,6 +503,10 @@ if (( have_bash )); then
   sleep 0.5
   if (( rc == 1 )) && [[ ! -e $c/played.wav ]]; then ok "no TTS, say --async: exits 1 before detaching"
   else bad "no TTS, say --async" "exit $rc"; fi
+  # A model without the piper binary is no engine either; the child would die.
+  err=$(NAUTICE_PIPER_MODEL=/nonexistent.onnx notts say -a "fresh text" 2>&1 >/dev/null); rc=$?
+  if (( rc == 1 )) && [[ $err == *piper* ]]; then ok "piper model without piper: --async exits 1"
+  else bad "piper model without piper" "exit $rc, stderr '$err'"; fi
   rm -rf "$c"
 else
   printf '  \033[33mskip\033[0m %s (%s)\n' "missing backends" "$SKIP_WHY"

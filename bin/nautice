@@ -150,15 +150,29 @@ AS
   esac
 }
 
-# Set when --channel both lost its banner: the sound still plays, then exit 1.
-BANNER_FAILED=0
+# Set when a backend is missing but part of the notification is still
+# delivered; nautice then exits 1 afterwards. NO_SPEECH drops the speech only.
+DEGRADED=0 NO_SPEECH=0
 
-# A banner that cannot be shown must not cost the sound with --channel both — a
-# lost notification is the worst outcome (docs/cli.md, "Channels").
+# A missing backend costs only its own part — a lost notification is the worst
+# outcome (docs/cli.md, "Channels"). Dies when nothing is left.
 banner_failed() {
   [[ $CHANNEL == visual ]] && die "$1"
   printf 'nautice: %s; sound only\n' "$1" >&2
-  BANNER_FAILED=1 CHANNEL=sound
+  DEGRADED=1 CHANNEL=sound
+}
+speech_failed() {
+  local cmd=$1 why=$2 left
+  if [[ $cmd != say ]]; then
+    NO_SPEECH=1 left='chime only'
+    [[ $CHANNEL == both ]] && left='banner and chime only'
+  elif [[ $CHANNEL == both ]]; then
+    CHANNEL=visual left='banner only'
+  else
+    die "$why"
+  fi
+  printf 'nautice: %s; %s\n' "$why" "$left" >&2
+  DEGRADED=1
 }
 
 # Banners ignore --repeat: copies piling up in the notification center are noise.
@@ -612,6 +626,15 @@ read_text() {
   printf '%s' "$text"
 }
 
+# Why the language cannot be spoken, or nothing when it can. A TTS command
+# counts even without a built-in engine behind it: should it fail, that shows
+# only at playback.
+speech_missing() {
+  [[ $(tts_engine "$1") == NAUTICE_TTS_CMD* ]] && return 0
+  [[ -n $(builtin_engine) ]] && return 0
+  printf 'no TTS backend (install espeak-ng, or set NAUTICE_TTS_CMD or NAUTICE_PIPER_MODEL)'
+}
+
 # The voice for the built-in engine. When a TTS command speaks the language,
 # --voice is not used (docs/cli.md) and must not fail the notification; should
 # the command fail, the built-in engine picks a voice as for best. The ( )
@@ -622,8 +645,6 @@ speech_voice() {
     ( resolve_voice "$lang" ) 2>/dev/null || ( OPT_VOICE=best; resolve_voice "$lang" ) 2>/dev/null || true
     return 0
   fi
-  [[ -n $(builtin_engine) ]] \
-    || die "no TTS backend (install espeak-ng, or set NAUTICE_TTS_CMD or NAUTICE_PIPER_MODEL)"
   resolve_voice "$lang"
 }
 
@@ -662,6 +683,8 @@ prepare() {
   fi
   [[ $CHANNEL == visual ]] && return 0
   SPEECH_LANG=$(resolve_lang "$TEXT")
+  local why; why=$(speech_missing "$SPEECH_LANG")
+  if [[ -n $why ]]; then speech_failed "$cmd" "$why"; return 0; fi
   VOICE=$(speech_voice "$SPEECH_LANG") || exit 1
 }
 
@@ -693,8 +716,12 @@ cmd_alert() {
   fi
   maybe_banner "$TEXT"
   if [[ $CHANNEL == visual ]]; then say_status "$CMD_NAME banner only"; return 0; fi
-  speech=$(tts_render "$VOICE" "${OPT_RATE:-$NAUTICE_RATE}" "$TEXT" 0 "$SPEECH_LANG")
-  who=${speech%%$'\n'*}; speech=${speech#*$'\n'}
+  if [[ $NO_SPEECH == 1 ]]; then
+    who='no speech' speech=''
+  else
+    speech=$(tts_render "$VOICE" "${OPT_RATE:-$NAUTICE_RATE}" "$TEXT" 0 "$SPEECH_LANG")
+    who=${speech%%$'\n'*}; speech=${speech#*$'\n'}
+  fi
   chime=$(wav_lead "$CHIME" "$(preroll_ms)")
   say_status "alert x$OPT_REPEAT [$who]$(chan_note)"
   with_lock emit "$chime" "$speech"
@@ -972,11 +999,11 @@ case $cmd in
     if [[ $OPT_ASYNC == 1 && $OPT_PLAN == 0 ]]; then
       # The child gets the text read here, so stdin it cannot read is not lost.
       if [[ $cmd == play ]]; then detach play "$1"; else detach "$cmd" "$TEXT"; fi
-      exit "$BANNER_FAILED"
+      exit "$DEGRADED"
     fi
     cache_prune "$VERSION"
     "cmd_$cmd" "$@"
-    exit "$BANNER_FAILED" ;;
+    exit "$DEGRADED" ;;
   list|doctor) cache_prune "$VERSION"; "cmd_$cmd" "$@" ;;
   cache) "cmd_$cmd" "$@" ;;
   # exit before bash reads past this line: an installer that overwrites this

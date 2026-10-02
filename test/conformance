@@ -437,11 +437,11 @@ else
 fi
 echo
 
-# ── Missing banner backend ──────────────────────────────────────────────────
-# With --channel both a missing banner must not cost the sound: warn, play,
-# exit 1. The PATH holds only basic tools, a stub player and a stub TTS
+# ── Missing backends ────────────────────────────────────────────────────────
+# A missing backend costs only its own part: warn, deliver the rest, exit 1.
+# With --channel both a missing banner must not cost the sound. The PATH holds only basic tools, a stub player and a stub TTS
 # command, so the backend (notify-send, osascript) is missing on any machine.
-echo "Missing banner backend"
+echo "Missing backends"
 if (( have_bash )); then
   c=$(mktemp -d); mkdir "$c/bin" "$c/min"
   for p in pw-play afplay; do
@@ -474,9 +474,38 @@ if (( have_bash )); then
   if (( rc == 1 )) && [[ $err == *"sound only"* && -s $c/played.wav ]]
   then ok "both --async: warns, detaches the sound, exits 1"
   else bad "both --async without a banner" "exit $rc, stderr '$err'"; fi
+
+  # No TTS engine: a banner backend is there (a stub that records), speech is
+  # not. The banner and the chime need no TTS, so they still arrive.
+  mkdir "$c/nb"
+  # shellcheck disable=SC2016  # $a and $t belong to the stub
+  printf '#!/bin/sh\nfor a; do t=$a; done; echo "$t" >> "%s/banner.txt"\n' "$c" > "$c/nb/notify-send"
+  chmod +x "$c/nb/notify-send"
+  notts() { NAUTICE_CACHE=$c/cache NAUTICE_PREROLL=0 PATH=$c/bin:$c/nb:$c/min "$BASH_IMPL" -q "$@"; }
+  # Waits up to 5 s for a detached child to leave a file behind.
+  wait_for() { local _; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [[ -s $1 ]] && return 0; sleep 0.25; done; return 1; }
+  ask=$(hash_file share/sounds/ask.wav)
+  for a in '' -a; do
+    rm -f "$c/played.wav" "$c/banner.txt"
+    err=$(notts alert $a -c both "fresh text" 2>&1 >/dev/null); rc=$?
+    wait_for "$c/played.wav"; wait_for "$c/banner.txt"
+    if (( rc == 1 )) && [[ $err == *"chime only"* && $(cat "$c/banner.txt" 2>/dev/null) == "fresh text" \
+         && $(hash_file "$c/played.wav" 2>/dev/null) == "$ask" ]]
+    then ok "no TTS, alert ${a:+$a }-c both: banner and chime, exit 1"
+    else bad "no TTS, alert ${a:+$a }-c both" "exit $rc, stderr '$err', banner '$(cat "$c/banner.txt" 2>/dev/null)'"; fi
+  done
+  rm -f "$c/played.wav" "$c/banner.txt"
+  notts say -c both "fresh text" >/dev/null 2>&1; rc=$?
+  if (( rc == 1 )) && [[ $(cat "$c/banner.txt" 2>/dev/null) == "fresh text" && ! -e $c/played.wav ]]
+  then ok "no TTS, say -c both: banner only, exit 1"
+  else bad "no TTS, say -c both" "exit $rc"; fi
+  notts say -a "fresh text" >/dev/null 2>&1; rc=$?
+  sleep 0.5
+  if (( rc == 1 )) && [[ ! -e $c/played.wav ]]; then ok "no TTS, say --async: exits 1 before detaching"
+  else bad "no TTS, say --async" "exit $rc"; fi
   rm -rf "$c"
 else
-  printf '  \033[33mskip\033[0m %s (%s)\n' "missing banner backend" "$SKIP_WHY"
+  printf '  \033[33mskip\033[0m %s (%s)\n' "missing backends" "$SKIP_WHY"
 fi
 # pwsh off Windows has no Windows Forms: the same rule on the ps1 side.
 if (( have_ps )) && [[ $PWSH != powershell ]] && [[ $(uname -s) != MINGW* && $(uname -s) != MSYS* && $(uname -s) != CYGWIN* ]]; then

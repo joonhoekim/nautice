@@ -105,13 +105,22 @@ is an OS notification banner.
 
 The banner's title is `nautice` and its body is the text.
 
-**A missing banner backend does not cost the sound.** With `both`, when the
-backend is not installed (see the table below) or fails, a warning goes to
-stderr, the sound still plays, and nautice exits 1 afterwards — a lost
-notification is the worst outcome. With `visual` there is nothing else to do,
-so it exits 1 before anything happens. `--async` checks that the backend is
-there before detaching: with `both` it warns, detaches the sound alone and
-exits 1; with `visual` it exits 1 without detaching.
+**A missing backend costs only its own part** — a lost notification is the
+worst outcome. What is left is still delivered, a warning goes to stderr, and
+nautice exits 1 afterwards:
+
+| Missing | Still delivered |
+|---|---|
+| Banner backend (see the table below), or it fails | With `both`: the sound |
+| TTS engine | `alert` / `call`: the chime, and with `both` the banner. `say` with `both`: the banner |
+
+A TTS engine is a TTS command for the language (see "TTS command"), the
+built-in engine (`say`, `piper` with its model, `espeak-ng`), or on Windows
+`System.Speech` with at least one voice. When nothing is left — `visual`
+without a banner backend, `say` on the `sound` channel without a TTS engine —
+nautice exits 1 before anything happens. `--async` decides all this before
+detaching, so the warning and the exit code are the same with it; the child
+gets only what is left.
 
 **Banners ignore `--repeat`:** shown once however many repetitions — copies
 piling up in the notification center are unreadable. `--repeat` and `--gap`
@@ -246,7 +255,9 @@ Other values are tried as a path, then as an OS sound
 
 An unknown sound exits 1 before a banner shows or anything is heard, and also
 under `--plan` and `--channel visual`: a mistyped `--tone` is a mistake
-wherever it appears.
+wherever it appears. So does a named voice that does not exist: unlike a
+missing engine (see "Channels"), it is a mistake in the command, not in the
+machine.
 
 `--async` detaches only after everything that can be checked without playing,
 so bad input still exits 1 right away instead of vanishing with the detached
@@ -258,8 +269,7 @@ child:
 - sound names, and `play` with a banner channel;
 - the voice, when it is named (`--voice`, `NAUTICE_VOICE`, `NAUTICE_VOICE_<LANG>`)
   and the built-in engine speaks the language;
-- a TTS engine at all;
-- the banner backend (see "Channels").
+- whether there is a TTS engine and a banner backend (see "Channels").
 
 What only playback reveals — a TTS command that fails, a banner the daemon
 drops — still happens in the child, where no one sees it.

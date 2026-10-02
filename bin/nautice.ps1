@@ -79,7 +79,7 @@ function Parse-Args([string[]] $argv) {
         Lang = ''
         Repeat = 1; Gap = 0.4; Quiet = $false; Async = $false; Hold = $false; Plan = $false; PlanName = ''
         RepeatGiven = $false; Rest = @(); Command = ''
-        Text = ''; Chime = ''; BannerFailed = $false
+        Text = ''; Chime = ''; Degraded = $false; NoSpeech = $false
     }
     $rest = New-Object System.Collections.Generic.List[string]
     $i = 0
@@ -211,14 +211,26 @@ function Test-BannerBackend([hashtable] $o) {
     } catch { return $_.Exception.Message }
 }
 
-# A banner that cannot be shown must not cost the sound with --channel both — a
-# lost notification is the worst outcome (docs/cli.md, "Channels"). The sound
-# plays, then exit 1.
+# A missing backend costs only its own part — a lost notification is the worst
+# outcome (docs/cli.md, "Channels"). What is left plays, then exit 1; dies when
+# nothing is left.
 function Set-BannerFailed([hashtable] $o, [string] $why) {
     if ($o.Channel -ceq 'visual') { Die "no banner: $why" }
     [Console]::Error.WriteLine("nautice: no banner ($why); sound only")
     $o.Channel = 'sound'
-    $o.BannerFailed = $true
+    $o.Degraded = $true
+}
+
+function Set-SpeechFailed([hashtable] $o, [string] $why) {
+    if ($o.Command -cne 'say') {
+        $o.NoSpeech = $true
+        $left = if ($o.Channel -ceq 'both') { 'banner and chime only' } else { 'chime only' }
+    } elseif ($o.Channel -ceq 'both') {
+        $o.Channel = 'visual'
+        $left = 'banner only'
+    } else { Die "no speech: $why" }
+    [Console]::Error.WriteLine("nautice: no speech ($why); $left")
+    $o.Degraded = $true
 }
 
 function New-Banner([hashtable] $o, [string] $text) {
@@ -330,6 +342,18 @@ function Assert-Voice([hashtable] $o, [string] $lang) {
         finally { $s.Dispose() }
     } catch { Die "cannot load System.Speech: $($_.Exception.Message)" }
     [void](Find-Voice $installed $want)
+}
+
+# '' when System.Speech loads and has a voice, else why not. pwsh off Windows
+# loads the assembly but throws "not supported on this platform" on use.
+function Test-TtsBackend {
+    try {
+        Add-Type -AssemblyName System.Speech
+        $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+        try { $n = @($s.GetInstalledVoices() | Where-Object { $_.Enabled }).Count } finally { $s.Dispose() }
+        if ($n -eq 0) { return 'no voices installed' }
+        return ''
+    } catch { return "cannot load System.Speech: $($_.Exception.Message)" }
 }
 
 function Coalesce($a, $b) { if ($null -eq $a) { return $b } else { return $a } }
@@ -460,7 +484,11 @@ function Initialize-Notice([hashtable] $o) {
         $why = Test-BannerBackend $o
         if ($why) { Set-BannerFailed $o $why }
     }
-    if ($o.Async -and -not $o.Plan -and $o.Channel -cne 'visual') { Assert-Voice $o (Resolve-Lang $o $o.Text) }
+    if (-not $o.Plan -and $o.Channel -cne 'visual') {
+        $why = Test-TtsBackend
+        if ($why) { Set-SpeechFailed $o $why }
+        elseif ($o.Async) { Assert-Voice $o (Resolve-Lang $o $o.Text) }
+    }
 }
 
 function Read-Text([hashtable] $o) {
@@ -505,13 +533,14 @@ function Invoke-Alert([hashtable] $o) {
     if ($o.Plan) { Write-Plan $o $o.PlanName $tone $text; return }
     # The voice is checked before the banner shows.
     $synth = $null
-    if ($o.Channel -cne 'visual') { $synth = New-Synth $o $text (Resolve-Lang $o $text) }
+    if ($o.Channel -cne 'visual' -and -not $o.NoSpeech) { $synth = New-Synth $o $text (Resolve-Lang $o $text) }
     $banner = New-Banner $o $text
-    if (-not $synth) { Write-Status $o "$($o.PlanName) banner only"; Close-Banner $banner; return }
+    if ($o.Channel -ceq 'visual') { Write-Status $o "$($o.PlanName) banner only"; Close-Banner $banner; return }
     try {
-        Write-Status $o "alert x$($o.Repeat) [$($synth.Voice.Name)]$(Get-ChanNote $o)"
+        $who = if ($synth) { $synth.Voice.Name } else { 'no speech' }
+        Write-Status $o "alert x$($o.Repeat) [$who]$(Get-ChanNote $o)"
         Invoke-Emit $o $o.Chime $synth $text
-    } finally { $synth.Dispose(); Close-Banner $banner }
+    } finally { if ($synth) { $synth.Dispose() }; Close-Banner $banner }
 }
 
 function Invoke-Call([hashtable] $o) {
@@ -708,7 +737,7 @@ if ($o.Async -and -not $o.Plan -and @('say', 'play', 'alert', 'call') -contains 
     $cmdline = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath) + $child |
                 ForEach-Object { Format-CmdArg $_ }) -join ' '
     Start-Process -FilePath 'powershell' -WindowStyle Hidden -ArgumentList $cmdline
-    if ($o.BannerFailed) { exit 1 }
+    if ($o.Degraded) { exit 1 }
     exit 0
 }
 
@@ -725,4 +754,4 @@ switch ($o.Command) {
     'help'   { Show-Usage }
     default  { Die "unknown command: $($o.Command) (nautice --help)" }
 }
-if ($o.BannerFailed) { exit 1 }
+if ($o.Degraded) { exit 1 }

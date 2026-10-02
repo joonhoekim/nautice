@@ -198,6 +198,9 @@ reject_case 'unknown sound'    play NoSuchSound
 # --plan must resolve sounds too, or a typo in a hook goes unnoticed.
 reject_case 'unknown sound --plan' play NoSuchSound --plan
 reject_case 'unknown tone'     alert -t NoSuchTone x
+reject_case 'unknown tone --plan' alert --plan -t NoSuchTone x
+reject_case 'unknown tone, banner only' alert -c visual -t NoSuchTone x
+reject_case 'unknown tone in call' call --plan -t NoSuchTone
 reject_case 'unknown channel'  say -c bogus x
 reject_case 'unknown language' say -l xyz x
 reject_case 'missing -l value' say -l

@@ -234,6 +234,10 @@ Other values are tried as a path, then as an OS sound
 | 0 | Success |
 | 1 | Bad argument, unknown voice or sound, missing backend |
 
+An unknown sound exits 1 before a banner shows or anything is heard, and also
+under `--plan` and `--channel visual`: a mistyped `--tone` is a mistake
+wherever it appears.
+
 `--async` detaches only after validating arguments, so bad input still exits 1
 right away.
 

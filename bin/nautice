@@ -632,6 +632,9 @@ cmd_alert() {
   local text voice speech chime lang
   : "${CMD_NAME:=alert}"
   text=$(read_text "$@")
+  # Before the banner and the plan, and not inside another $( ): there the
+  # failure became an empty argument and the speech went on without a chime.
+  chime=$(sfx_resolve "${OPT_TONE:-ask}") || exit 1
   if [[ $OPT_PLAN == 1 ]]; then
     voice=$(resolve_voice "$(resolve_lang "$text")" 2>/dev/null) || voice=''
     print_plan "$CMD_NAME" "$voice" "${OPT_TONE:-ask}" "$text"; return 0
@@ -642,7 +645,7 @@ cmd_alert() {
   voice=$(resolve_voice "$lang")
   speech=$(tts_render "$voice" "${OPT_RATE:-$NAUTICE_RATE}" "$text" 0 "$lang")
   local who=${speech%%$'\n'*}; speech=${speech#*$'\n'}
-  chime=$(wav_lead "$(sfx_resolve "${OPT_TONE:-ask}")" "$(preroll_ms)")
+  chime=$(wav_lead "$chime" "$(preroll_ms)")
   say_status "alert x$OPT_REPEAT [$who]$(chan_note)"
   with_lock emit "$chime" "$speech"
 }

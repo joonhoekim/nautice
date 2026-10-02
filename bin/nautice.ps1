@@ -431,10 +431,11 @@ function Invoke-Alert([hashtable] $o) {
     if (-not $o.PlanName) { $o.PlanName = 'alert' }
     $text = Read-Text $o
     $tone = if ($o.Tone) { $o.Tone } else { 'ask' }
+    # Before the banner and the plan: an unknown tone exits 1 wherever it appears.
+    $chime = Resolve-Sfx $tone
     if ($o.Plan) { Write-Plan $o $o.PlanName $tone $text; return }
     $banner = New-Banner $o $text
     if ($o.Channel -ceq 'visual') { Write-Status $o "$($o.PlanName) banner only"; Close-Banner $banner; return }
-    $chime = Resolve-Sfx $tone
     $synth = New-Synth $o $text (Resolve-Lang $o $text)
     try {
         Write-Status $o "alert x$($o.Repeat) [$($synth.Voice.Name)]$(Get-ChanNote $o)"

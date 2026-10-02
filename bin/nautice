@@ -428,8 +428,9 @@ wav_lead() {
 }
 
 # ── TTS rendering ───────────────────────────────────────────────────────────
-# Neither say nor espeak-ng takes a playback volume, so speech is rendered to a
-# file and played by the audio player; caching the file skips re-synthesis.
+# say has no volume option and espeak-ng -a sets the synthesis amplitude in its
+# own unit, so speech is rendered to a file and the audio player applies --vol,
+# as for a sound; caching the file skips re-synthesis.
 wpm_for() { awk -v m="$1" -v b="$BASE_WPM" 'BEGIN { printf "%d", m * b }'; }
 
 # The engine that speaks a language: a user command (NAUTICE_TTS_CMD_<LANG>, then

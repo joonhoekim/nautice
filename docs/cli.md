@@ -318,9 +318,11 @@ Backend limits, not bugs. The conformance test allows exactly these.
   `(Enhanced)`). Elsewhere `best` equals `auto`.
 - **Queue (serialisation)** — only the bash side locks. Windows `Speak()` is
   synchronous, so one process is serial by nature, but several can overlap.
-- **Render cache** — bash side only. `say` and `espeak-ng` take no playback
-  volume, so speech is rendered to a file anyway. SAPI takes volume and rate at
-  synthesis time, so Windows has no cache and `nautice cache` says so.
+- **Render cache** — bash side only. `say` has no volume option and
+  `espeak-ng -a` sets the synthesis amplitude in its own unit, so speech is
+  rendered to a file anyway and the player applies `--vol`, as for a sound.
+  SAPI takes volume and rate at synthesis time, so Windows has no cache and
+  `nautice cache` says so.
 - **`voice` in `--plan`** — bash prints the resolved name (`Yuna (Premium)`),
   Windows leaves it empty because resolving needs `System.Speech`. Compare
   `voice_req` and `lang` instead.

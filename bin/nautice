@@ -920,7 +920,8 @@ cmd=${1:-}; [[ $# -gt 0 ]] && shift
 case $cmd in
   say|play|alert|call)
     check_num NAUTICE_PREROLL "$NAUTICE_PREROLL" 0 2
-    if [[ $OPT_ASYNC == 1 ]]; then detach "$cmd" "$@"; exit 0; fi
+    # --plan prints instead of playing; a detached child would print it nowhere.
+    if [[ $OPT_ASYNC == 1 && $OPT_PLAN == 0 ]]; then detach "$cmd" "$@"; exit 0; fi
     cache_prune "$VERSION"
     "cmd_$cmd" "$@" ;;
   list|doctor) cache_prune "$VERSION"; "cmd_$cmd" "$@" ;;

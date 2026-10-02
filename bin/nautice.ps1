@@ -620,7 +620,8 @@ if (@('say', 'play', 'alert', 'call') -contains $o.Command) {
 
 # Hooks must not block the agent. Arguments are validated before detaching, so
 # bad input still fails here with exit 1.
-if ($o.Async -and @('say', 'play', 'alert', 'call') -contains $o.Command) {
+# --plan prints instead of playing; a detached child would print it nowhere.
+if ($o.Async -and -not $o.Plan -and @('say', 'play', 'alert', 'call') -contains $o.Command) {
     $passthru = @($args | Where-Object { $_ -cne '-a' -and $_ -cne '--async' })
     $cmdline = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-q') + $passthru |
                 ForEach-Object { Format-CmdArg $_ }) -join ' '

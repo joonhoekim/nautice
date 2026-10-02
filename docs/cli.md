@@ -41,7 +41,7 @@ spoken twice, so keep it short.
 | `-a, --async` | off | Return without waiting. Required in hooks |
 | `-q, --quiet` | off | No status line |
 | `-h, --help` / `--version` | | |
-| `--plan` | off | Print the resolved plan without sound. For `test/conformance` |
+| `--plan` | off | Print the resolved plan without sound. For `test/conformance`. Never detaches, even with `--async` |
 
 Everything after `--` is text.
 

@@ -83,6 +83,8 @@ plan_case 'call twice by default' call
 plan_case 'call with text'      call "Please check"
 plan_case 'call repeat override' call -n 1 "Just once"
 plan_case 'all text after --'   say -- "-v looks like an option"
+# A detached child would print the plan nowhere.
+plan_case '--plan ignores --async' alert -a -t warn "Disk is full"
 # Language detection: a divergent lang means a different voice per OS.
 plan_case 'Hangul is ko'        say "빌드가 끝났습니다"
 plan_case 'English is en'       say "build finished"

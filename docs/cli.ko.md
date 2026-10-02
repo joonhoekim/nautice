@@ -42,7 +42,7 @@
 | `-a, --async` | off | 기다리지 않고 반환. 훅에서 필수 |
 | `-q, --quiet` | off | 상태 줄을 찍지 않는다 |
 | `-h, --help` / `--version` | | |
-| `--plan` | off | 소리를 내지 않고 해석 결과만 찍는다. `test/conformance` 전용 |
+| `--plan` | off | 소리를 내지 않고 해석 결과만 찍는다. `test/conformance` 전용. `--async` 와 함께 줘도 떼어내지 않는다 |
 
 `--` 뒤는 전부 문구로 본다.
 

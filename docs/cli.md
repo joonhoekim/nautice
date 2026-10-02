@@ -105,6 +105,14 @@ is an OS notification banner.
 
 The banner's title is `nautice` and its body is the text.
 
+**A missing banner backend does not cost the sound.** With `both`, when the
+backend is not installed (see the table below) or fails, a warning goes to
+stderr, the sound still plays, and nautice exits 1 afterwards — a lost
+notification is the worst outcome. With `visual` there is nothing else to do,
+so it exits 1 before anything happens. `--async` checks that the backend is
+there before detaching: with `both` it warns, detaches the sound alone and
+exits 1; with `visual` it exits 1 without detaching.
+
 **Banners ignore `--repeat`:** shown once however many repetitions — copies
 piling up in the notification center are unreadable. `--repeat` and `--gap`
 apply to the sound channel only.
@@ -128,7 +136,7 @@ allows — see "Platform differences".
 |---|---|---|
 | macOS | `osascript` `display notification` | nothing (built in) |
 | Linux | `notify-send` | `libnotify` and a notification daemon |
-| Windows | `System.Windows.Forms.NotifyIcon` balloon | nothing (built in) |
+| Windows | `System.Windows.Forms.NotifyIcon` balloon | nothing (built in); `--hold` needs WinRT |
 
 `--plan` prints the channel as `channel`, `--hold` as `hold` (`0` / `1`), and the
 OS's banner backend as `backend_visual`. On Windows `--hold` changes the backend,
@@ -250,7 +258,8 @@ child:
 - sound names, and `play` with a banner channel;
 - the voice, when it is named (`--voice`, `NAUTICE_VOICE`, `NAUTICE_VOICE_<LANG>`)
   and the built-in engine speaks the language;
-- a TTS engine at all.
+- a TTS engine at all;
+- the banner backend (see "Channels").
 
 What only playback reveals — a TTS command that fails, a banner the daemon
 drops — still happens in the child, where no one sees it.

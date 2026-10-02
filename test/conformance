@@ -437,6 +437,55 @@ else
 fi
 echo
 
+# ── Missing banner backend ──────────────────────────────────────────────────
+# With --channel both a missing banner must not cost the sound: warn, play,
+# exit 1. The PATH holds only basic tools, a stub player and a stub TTS
+# command, so the backend (notify-send, osascript) is missing on any machine.
+echo "Missing banner backend"
+if (( have_bash )); then
+  c=$(mktemp -d); mkdir "$c/bin" "$c/min"
+  for p in pw-play afplay; do
+    # shellcheck disable=SC2016  # $a and $f belong to the stub
+    printf '#!/bin/sh\nfor a; do f=$a; done; cp "$f" "%s/played.wav"\n' "$c" > "$c/bin/$p"
+    chmod +x "$c/bin/$p"
+  done
+  for t in bash sh env uname dirname readlink awk sed od tr grep cut sort find wc du \
+           mkdir cat cp mv rm rmdir head tail sleep nohup flock sha1sum shasum md5sum; do
+    p=$(command -v "$t" 2>/dev/null) && [[ $p == /* ]] && ln -s "$p" "$c/min/$t"
+  done
+  nob() {
+    # shellcheck disable=SC2016  # expanded by the command's sh, not here
+    NAUTICE_CACHE=$c/cache NAUTICE_PREROLL=0 PATH=$c/bin:$c/min \
+      NAUTICE_TTS_CMD='cat >/dev/null; cp "'$PWD'/share/sounds/ok.wav" "$NAUTICE_TTS_OUT"' \
+      "$BASH_IMPL" -q "$@"
+  }
+  err=$(nob say -c both "build done" 2>&1 >/dev/null); rc=$?
+  if (( rc == 1 )) && [[ $err == *"sound only"* && -s $c/played.wav ]]
+  then ok "both: warns, plays the sound, exits 1"
+  else bad "both without a banner" "exit $rc, stderr '$err', played: $([[ -s $c/played.wav ]] && echo yes || echo no)"; fi
+  rm -f "$c/played.wav"
+  nob alert -c visual "build done" >/dev/null 2>&1; rc=$?
+  if (( rc == 1 )) && [[ ! -e $c/played.wav ]]; then ok "visual: exits 1 and plays nothing"
+  else bad "visual without a banner" "exit $rc"; fi
+  err=$(nob say -a -c both "build done" 2>&1 >/dev/null); rc=$?
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    [[ -s $c/played.wav ]] && break; sleep 0.25
+  done
+  if (( rc == 1 )) && [[ $err == *"sound only"* && -s $c/played.wav ]]
+  then ok "both --async: warns, detaches the sound, exits 1"
+  else bad "both --async without a banner" "exit $rc, stderr '$err'"; fi
+  rm -rf "$c"
+else
+  printf '  \033[33mskip\033[0m %s (%s)\n' "missing banner backend" "$SKIP_WHY"
+fi
+# pwsh off Windows has no Windows Forms: the same rule on the ps1 side.
+if (( have_ps )) && [[ $PWSH != powershell ]] && [[ $(uname -s) != MINGW* && $(uname -s) != MSYS* && $(uname -s) != CYGWIN* ]]; then
+  msg=$(run_ps say -c visual x | head -1); rc=${PIPESTATUS[0]}
+  if (( rc == 1 )) && [[ $msg == nautice:* ]]; then ok "ps visual without Windows Forms exits 1"
+  else bad "ps visual without a banner" "exit $rc, '$msg'"; fi
+fi
+echo
+
 # ── Installed layout beside a sound theme ───────────────────────────────────
 # <prefix>/share/sounds is the XDG sound theme directory (~/.local on most
 # desktops); taking it for the bundle made every sound "no such sound".

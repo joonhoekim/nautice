@@ -103,6 +103,13 @@ finished` 는 같은 문자다. 그래서 OS 로캘(`LANG`·`LC_MESSAGES`, Windo
 
 배너의 제목은 `nautice`, 본문은 문구다.
 
+**배너 백엔드가 없다고 소리까지 잃지는 않는다.** `both` 에서 백엔드가 설치돼
+있지 않거나(아래 표) 실패하면 stderr 에 경고를 찍고, 소리는 그대로 내고, 끝난
+뒤 1 로 끝난다 — 알림을 잃는 것이 가장 나쁜 결과다. `visual` 은 달리 할 일이
+없으므로 아무것도 하기 전에 1 로 죽는다. `--async` 는 떼어내기 전에 백엔드가
+있는지 본다. `both` 면 경고를 찍고 소리만 떼어낸 뒤 1 로 끝나고, `visual` 이면
+떼어내지 않고 1 로 죽는다.
+
 **배너는 `--repeat` 을 따르지 않는다.** 몇 번을 반복하든 한 번만 띄운다 — 같은
 배너가 알림 센터에 쌓이면 읽을 수 없게 된다. `--repeat` 과 `--gap` 은 소리
 채널에만 걸린다.
@@ -126,7 +133,7 @@ finished` 는 같은 문자다. 그래서 OS 로캘(`LANG`·`LC_MESSAGES`, Windo
 |---|---|---|
 | macOS | `osascript` 의 `display notification` | 없다 (내장) |
 | Linux | `notify-send` | `libnotify` 와 알림 데몬 |
-| Windows | `System.Windows.Forms.NotifyIcon` 의 벌룬 | 없다 (내장) |
+| Windows | `System.Windows.Forms.NotifyIcon` 의 벌룬 | 없다 (내장). `--hold` 는 WinRT 가 필요 |
 
 `--plan` 은 고른 채널을 `channel` 로, `--hold` 여부를 `hold`(`0` / `1`) 로, 그 OS 의
 배너 백엔드를 `backend_visual` 로 찍는다. `--hold` 는 백엔드를 바꾸기도 하므로
@@ -241,6 +248,7 @@ bash 쪽은 렌더한 음성과 보이스 해석 결과(보이스 표, 언어별
 - 이름으로 지정한 보이스(`--voice`, `NAUTICE_VOICE`, `NAUTICE_VOICE_<LANG>`) —
   그 언어를 내장 엔진이 읽을 때
 - TTS 엔진이 하나라도 있는지
+- 배너 백엔드 ("채널" 참고)
 
 재생해 봐야 드러나는 것 — 실패하는 TTS 명령, 데몬이 버린 배너 — 은 여전히
 아무도 보지 않는 자식 안에서 일어난다.

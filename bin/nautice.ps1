@@ -79,7 +79,7 @@ function Parse-Args([string[]] $argv) {
         Lang = ''
         Repeat = 1; Gap = 0.4; Quiet = $false; Async = $false; Hold = $false; Plan = $false; PlanName = ''
         RepeatGiven = $false; Rest = @(); Command = ''
-        Text = ''; Chime = ''
+        Text = ''; Chime = ''; BannerFailed = $false
     }
     $rest = New-Object System.Collections.Generic.List[string]
     $i = 0
@@ -183,11 +183,8 @@ $BannerHoldMs = 2000
 $ToastAumid = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
 
 # A reminder with no actions degrades to an ordinary, expiring toast.
+# Test-BannerBackend has loaded the WinRT types.
 function Show-HeldToast([string] $text) {
-    try {
-        [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
-        [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
-    } catch { Die "cannot load the WinRT notification API needed by --hold: $($_.Exception.Message)" }
     $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
     $doc.LoadXml(@"
 <toast scenario="reminder">
@@ -199,17 +196,42 @@ function Show-HeldToast([string] $text) {
     [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($ToastAumid).Show($toast)
 }
 
+# '' when the banner backend loads, else why not. NotifyIcon needs Windows
+# Forms, which pwsh off Windows lacks; --hold's toast needs WinRT.
+function Test-BannerBackend([hashtable] $o) {
+    try {
+        if ($o.Hold) {
+            [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+            [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
+        } else {
+            Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Drawing
+        }
+        return ''
+    } catch { return $_.Exception.Message }
+}
+
+# A banner that cannot be shown must not cost the sound with --channel both — a
+# lost notification is the worst outcome (docs/cli.md, "Channels"). The sound
+# plays, then exit 1.
+function Set-BannerFailed([hashtable] $o, [string] $why) {
+    if ($o.Channel -ceq 'visual') { Die "no banner: $why" }
+    [Console]::Error.WriteLine("nautice: no banner ($why); sound only")
+    $o.Channel = 'sound'
+    $o.BannerFailed = $true
+}
+
 function New-Banner([hashtable] $o, [string] $text) {
     if ($o.Channel -ceq 'sound') { return $null }
-    # The notification platform owns the toast; no need to hold the process.
-    if ($o.Hold) { Show-HeldToast $text; return $null }
-    Add-Type -AssemblyName System.Windows.Forms
-    Add-Type -AssemblyName System.Drawing
-    $ni = New-Object System.Windows.Forms.NotifyIcon
-    $ni.Icon = [System.Drawing.SystemIcons]::Information
-    $ni.Visible = $true
-    $ni.ShowBalloonTip($BannerHoldMs, 'nautice', $text, [System.Windows.Forms.ToolTipIcon]::Info)
-    return @{ Icon = $ni; Watch = [Diagnostics.Stopwatch]::StartNew() }
+    try {
+        # The notification platform owns the toast; no need to hold the process.
+        if ($o.Hold) { Show-HeldToast $text; return $null }
+        $ni = New-Object System.Windows.Forms.NotifyIcon
+        $ni.Icon = [System.Drawing.SystemIcons]::Information
+        $ni.Visible = $true
+        $ni.ShowBalloonTip($BannerHoldMs, 'nautice', $text, [System.Windows.Forms.ToolTipIcon]::Info)
+        return @{ Icon = $ni; Watch = [Diagnostics.Stopwatch]::StartNew() }
+    } catch { Set-BannerFailed $o $_.Exception.Message; return $null }
 }
 
 function Close-Banner($b) {
@@ -434,6 +456,10 @@ function Initialize-Notice([hashtable] $o) {
         $o.Text = Read-Text $o
     }
     if ($o.Command -cne 'say') { $o.Chime = Resolve-Sfx $(if ($o.Tone) { $o.Tone } else { 'ask' }) }
+    if (-not $o.Plan -and $o.Channel -cne 'sound') {
+        $why = Test-BannerBackend $o
+        if ($why) { Set-BannerFailed $o $why }
+    }
     if ($o.Async -and -not $o.Plan -and $o.Channel -cne 'visual') { Assert-Voice $o (Resolve-Lang $o $o.Text) }
 }
 
@@ -682,6 +708,7 @@ if ($o.Async -and -not $o.Plan -and @('say', 'play', 'alert', 'call') -contains 
     $cmdline = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath) + $child |
                 ForEach-Object { Format-CmdArg $_ }) -join ' '
     Start-Process -FilePath 'powershell' -WindowStyle Hidden -ArgumentList $cmdline
+    if ($o.BannerFailed) { exit 1 }
     exit 0
 }
 
@@ -698,3 +725,4 @@ switch ($o.Command) {
     'help'   { Show-Usage }
     default  { Die "unknown command: $($o.Command) (nautice --help)" }
 }
+if ($o.BannerFailed) { exit 1 }

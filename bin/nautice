@@ -129,9 +129,7 @@ visual_backend() {
 }
 
 banner_show() {
-  local text=$1 b; b=$(visual_backend)
-  command -v "$b" >/dev/null 2>&1 \
-    || die "$b not found (needed for the visual channel)"
+  local text=$1
   case $PLATFORM in
     macos)
       # Pass the text through argv instead of splicing it into an AppleScript
@@ -152,10 +150,21 @@ AS
   esac
 }
 
+# Set when --channel both lost its banner: the sound still plays, then exit 1.
+BANNER_FAILED=0
+
+# A banner that cannot be shown must not cost the sound with --channel both — a
+# lost notification is the worst outcome (docs/cli.md, "Channels").
+banner_failed() {
+  [[ $CHANNEL == visual ]] && die "$1"
+  printf 'nautice: %s; sound only\n' "$1" >&2
+  BANNER_FAILED=1 CHANNEL=sound
+}
+
 # Banners ignore --repeat: copies piling up in the notification center are noise.
 maybe_banner() {
   [[ $CHANNEL == sound ]] && return 0
-  banner_show "$1"
+  banner_show "$1" || banner_failed "$(visual_backend) failed"
 }
 
 # Suffix for the status line when a banner was shown too.
@@ -647,7 +656,11 @@ prepare() {
   # Not inside another $( ): there a failure became an empty argument and
   # alert spoke without a chime, exiting 0.
   if [[ $cmd != say ]]; then CHIME=$(sfx_resolve "${OPT_TONE:-ask}") || exit 1; fi
-  [[ $OPT_PLAN == 1 || $CHANNEL == visual ]] && return 0
+  [[ $OPT_PLAN == 1 ]] && return 0
+  if [[ $CHANNEL != sound ]] && ! command -v "$(visual_backend)" >/dev/null 2>&1; then
+    banner_failed "$(visual_backend) not found (needed for the visual channel)"
+  fi
+  [[ $CHANNEL == visual ]] && return 0
   SPEECH_LANG=$(resolve_lang "$TEXT")
   VOICE=$(speech_voice "$SPEECH_LANG") || exit 1
 }
@@ -959,10 +972,11 @@ case $cmd in
     if [[ $OPT_ASYNC == 1 && $OPT_PLAN == 0 ]]; then
       # The child gets the text read here, so stdin it cannot read is not lost.
       if [[ $cmd == play ]]; then detach play "$1"; else detach "$cmd" "$TEXT"; fi
-      exit 0
+      exit "$BANNER_FAILED"
     fi
     cache_prune "$VERSION"
-    "cmd_$cmd" "$@" ;;
+    "cmd_$cmd" "$@"
+    exit "$BANNER_FAILED" ;;
   list|doctor) cache_prune "$VERSION"; "cmd_$cmd" "$@" ;;
   cache) "cmd_$cmd" "$@" ;;
   # exit before bash reads past this line: an installer that overwrites this

@@ -1016,6 +1016,14 @@ case $cmd in
     prepare "$cmd" "$@"
     # --plan prints instead of playing; a detached child would print it nowhere.
     if [[ $OPT_ASYNC == 1 && $OPT_PLAN == 0 ]]; then
+      # The banner is shown here, not in the child: a backend that fails (no
+      # D-Bus session, no daemon) is then reported. notify-send and osascript
+      # return once the daemon has the message, so this does not block.
+      if [[ $CHANNEL != sound ]]; then
+        maybe_banner "$TEXT"
+        [[ $CHANNEL == visual ]] && exit "$DEGRADED"
+        CHANNEL=sound
+      fi
       # The child gets the text read here, so stdin it cannot read is not lost.
       if [[ $cmd == play ]]; then detach play "$1"; else detach "$cmd" "$TEXT"; fi
       exit "$DEGRADED"

@@ -272,8 +272,11 @@ child:
   and the built-in engine speaks the language;
 - whether there is a TTS engine and a banner backend (see "Channels").
 
-What only playback reveals — a TTS command that fails, a banner the daemon
-drops — still happens in the child, where no one sees it.
+On macOS and Linux the banner itself is shown before detaching, so a backend
+that is installed but fails (no D-Bus session, no daemon) is reported as in
+the foreground; the child gets the sound alone. On Windows the child shows it
+(see "Platform differences"). What only playback reveals — a TTS command that
+fails — still happens in the child, where no one sees it.
 
 ## Compatibility
 
@@ -329,7 +332,9 @@ Backend limits, not bugs. The conformance test allows exactly these.
 - **Windows banner lifetime** — a `NotifyIcon` balloon shows only while the
   process holds its tray icon, so Windows alone holds it briefly (2 s) before
   cleaning up. macOS and Linux hand off to a daemon and return at once. Hooks
-  detach with `-a`, so the difference is invisible there.
+  detach with `-a`, so the difference is invisible there. For the same reason
+  `--async` on Windows leaves the banner to the detached child, while macOS and
+  Linux show it before detaching; a balloon that fails there goes unreported.
 - **Windows banners need a desktop session** — services and headless sessions
   have no tray, so no balloon appears.
 - **How well `--hold` holds differs per OS** — only Windows guarantees it.

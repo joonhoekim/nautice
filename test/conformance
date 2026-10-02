@@ -518,6 +518,21 @@ if (( have_bash )); then
   if [[ $(uname -s) != Linux ]]; then :
   elif (( rc == 1 )) && [[ $err == *"banner only"* && -s $c/banner.txt ]]; then ok "no player, call --async -c both: banner, exit 1"
   else bad "no player, call --async -c both" "exit $rc, stderr '$err'"; fi
+  # A banner backend that is installed but fails (no D-Bus session) must be
+  # reported under --async too: the parent shows the banner itself.
+  mkdir "$c/nbfail"
+  printf '#!/bin/sh\necho "Cannot connect to dbus" >&2; exit 1\n' > "$c/nbfail/notify-send"
+  chmod +x "$c/nbfail/notify-send"
+  if [[ $(uname -s) == Linux ]]; then
+    err=$(NAUTICE_CACHE=$c/cache PATH=$c/bin:$c/nbfail:$c/min "$BASH_IMPL" -q call -a -c visual 2>&1 >/dev/null); rc=$?
+    if (( rc == 1 )) && [[ $err == *"notify-send failed"* ]]; then ok "failing banner, call --async -c visual: exit 1"
+    else bad "failing banner, call --async -c visual" "exit $rc, stderr '$err'"; fi
+    rm -f "$c/played.wav"
+    err=$(NAUTICE_CACHE=$c/cache PATH=$c/bin:$c/nbfail:$c/min NAUTICE_PREROLL=0 "$BASH_IMPL" -q call -a -c both 2>&1 >/dev/null); rc=$?
+    wait_for "$c/played.wav"
+    if (( rc == 1 )) && [[ $err == *"sound only"* && -s $c/played.wav ]]; then ok "failing banner, call --async -c both: sound, exit 1"
+    else bad "failing banner, call --async -c both" "exit $rc, stderr '$err'"; fi
+  fi
   # A model without the piper binary is no engine either; the child would die.
   err=$(NAUTICE_PIPER_MODEL=/nonexistent.onnx notts say -a "fresh text" 2>&1 >/dev/null); rc=$?
   if (( rc == 1 )) && [[ $err == *piper* ]]; then ok "piper model without piper: --async exits 1"

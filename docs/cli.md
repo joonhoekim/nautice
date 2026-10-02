@@ -174,7 +174,9 @@ command renders anew.
 **A failing command does not fail the notification.** A non-zero exit, no WAV,
 or no exit within 15 s (where `timeout` exists) prints a warning on stderr and
 the built-in engine speaks instead: a cloud engine gone offline must not cost
-the notification. `--voice` applies to the built-in engine only.
+the notification. `--voice` applies to the built-in engine only: where a
+command speaks the language, an unknown voice is not an error, and should the
+command fail, the built-in engine picks a voice as for `best`.
 
 `--plan` prints the engine as `backend_tts`: the variable's name
 (`NAUTICE_TTS_CMD_KO`) when a command applies, otherwise `say`, `piper`,
@@ -238,8 +240,20 @@ An unknown sound exits 1 before a banner shows or anything is heard, and also
 under `--plan` and `--channel visual`: a mistyped `--tone` is a mistake
 wherever it appears.
 
-`--async` detaches only after validating arguments, so bad input still exits 1
-right away.
+`--async` detaches only after everything that can be checked without playing,
+so bad input still exits 1 right away instead of vanishing with the detached
+child:
+
+- options and their ranges, including `NAUTICE_PREROLL`;
+- the text — `say` and `alert` read stdin before detaching and hand the text
+  to the child, so empty input is "nothing to say";
+- sound names, and `play` with a banner channel;
+- the voice, when it is named (`--voice`, `NAUTICE_VOICE`, `NAUTICE_VOICE_<LANG>`)
+  and the built-in engine speaks the language;
+- a TTS engine at all.
+
+What only playback reveals — a TTS command that fails, a banner the daemon
+drops — still happens in the child, where no one sees it.
 
 ## Compatibility
 

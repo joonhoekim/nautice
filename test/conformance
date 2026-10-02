@@ -233,6 +233,12 @@ NAUTICE_PREROLL=abc reject_case 'NAUTICE_PREROLL letters' say x
 NAUTICE_PREROLL=3   reject_case 'NAUTICE_PREROLL range'   play ok
 # Checked before detaching, or a hook would lose every notification silently.
 NAUTICE_PREROLL=abc reject_case 'NAUTICE_PREROLL with --async' say -a x
+reject_case 'unknown sound with --async' play -a NoSuchSound
+reject_case 'unknown tone with --async'  alert -a -t NoSuchTone x
+reject_case 'unknown voice with --async' say -a -v NoSuchVoice x
+reject_case 'play visual with --async'   play -a -c visual ok
+# The detached child has no stdin, so it is read and checked before detaching.
+reject_case 'empty stdin with --async'   say -a </dev/null
 echo
 
 # ── Help lists every contract option ────────────────────────────────────────
@@ -368,7 +374,10 @@ if (( have_bash )); then
   cat > "$c/bin/espeak-ng" <<STUB
 #!/bin/sh
 case "\$1" in --voices) printf 'Pty Language Age/Gender VoiceName File Other\\n 2 en --/M English gmw/en\\n'; exit ;; esac
-while [ \$# -gt 0 ]; do [ "\$1" = -w ] && cp "$PWD/share/sounds/warn.wav" "\$2"; shift; done
+while [ \$# -gt 0 ]; do
+  [ "\$1" = -v ] && [ "\$2" = NoSuchVoice ] && exit 1
+  [ "\$1" = -w ] && cp "$PWD/share/sounds/warn.wav" "\$2"; shift
+done
 STUB
   chmod +x "$c/bin/espeak-ng"
   tts() { NAUTICE_CACHE=$c/cache NAUTICE_PREROLL=0 PATH=$c/bin:$PATH run_bash "$@"; }
@@ -396,6 +405,20 @@ STUB
   NAUTICE_TTS_CMD_KO=$cmd tts -q say -r 1.5 "빌드 끝" >/dev/null
   if [[ $(wc -l < "$c/runs") -eq 1 ]]; then ok "a cached render does not run the command again"
   else bad "command cache" "ran $(wc -l < "$c/runs") times"; fi
+
+  # --voice is for the built-in engine: unknown there, ignored where a command
+  # speaks. The detached child gets no stdin, so the text must be read first.
+  tts -q -v NoSuchVoice say "build done" >/dev/null 2>&1; rc=$?
+  if (( rc == 1 )); then ok "unknown voice for the built-in engine exits 1"
+  else bad "unknown built-in voice" "exit $rc"; fi
+  rm -f "$c/played.wav" "$c/in.txt"
+  printf 'build done' | NAUTICE_TTS_CMD=$cmd tts -a -v NoSuchVoice say >/dev/null 2>&1; rc=$?
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    [[ -s $c/played.wav ]] && break; sleep 0.25
+  done
+  if (( rc == 0 )) && [[ $(cat "$c/in.txt" 2>/dev/null) == "build done" && -s $c/played.wav ]]
+  then ok "--async: stdin reaches the child, voice left to the command"
+  else bad "--async stdin" "exit $rc, stdin '$(cat "$c/in.txt" 2>/dev/null)'"; fi
 
   if [[ $(uname -s) == Linux ]]; then
     for bad_cmd in 'exit 3' 'true' ; do

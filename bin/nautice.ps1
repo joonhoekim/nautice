@@ -79,6 +79,7 @@ function Parse-Args([string[]] $argv) {
         Lang = ''
         Repeat = 1; Gap = 0.4; Quiet = $false; Async = $false; Hold = $false; Plan = $false; PlanName = ''
         RepeatGiven = $false; Rest = @(); Command = ''
+        Text = ''; Chime = ''
     }
     $rest = New-Object System.Collections.Generic.List[string]
     $i = 0
@@ -261,19 +262,9 @@ function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
     $installed = @($synth.GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo })
     if (-not $installed) { Die 'no voices installed' }
 
-    $want = if ($o.Voice) { $o.Voice } else { $Defaults.Voice }
-    if ($want -eq 'auto' -or $want -eq 'best') {
-        # Per-language override such as NAUTICE_VOICE_KO.
-        $want = Get-EnvOrEmpty "NAUTICE_VOICE_$($lang.ToUpper())"
-    }
-    # Windows exposes no quality tiers: best is the same as auto.
-    if ($want -eq 'auto' -or $want -eq 'best') { $want = '' }
-
+    $want = Get-VoiceRequest $o $lang
     $pick = $null
-    if ($want) {
-        $pick = $installed | Where-Object { $_.Name -like "*$want*" } | Select-Object -First 1
-        if (-not $pick) { Die "no such voice: $want (nautice list voices)" }
-    }
+    if ($want) { $pick = Find-Voice $installed $want }
     # Voice for the language, else fall back rather than fail (docs/cli.md).
     # Only installed language packs have voices, so this falls back often.
     if (-not $pick) {
@@ -284,6 +275,39 @@ function New-Synth([hashtable] $o, [string] $text, [string] $lang) {
     }
     if ($pick) { $synth.SelectVoice($pick.Name) }
     return $synth
+}
+
+# The voice asked for by name, or '' when the language decides.
+function Get-VoiceRequest([hashtable] $o, [string] $lang) {
+    $want = if ($o.Voice) { $o.Voice } else { $Defaults.Voice }
+    if ($want -eq 'auto' -or $want -eq 'best') {
+        # Per-language override such as NAUTICE_VOICE_KO.
+        $want = Get-EnvOrEmpty "NAUTICE_VOICE_$($lang.ToUpper())"
+    }
+    # Windows exposes no quality tiers: best is the same as auto.
+    if ($want -eq 'auto' -or $want -eq 'best') { $want = '' }
+    return $want
+}
+
+function Find-Voice($installed, [string] $want) {
+    $pick = $installed | Where-Object { $_.Name -like "*$want*" } | Select-Object -First 1
+    if (-not $pick) { Die "no such voice: $want (nautice list voices)" }
+    return $pick
+}
+
+# New-Synth checks the voice too, but a detached child's exit code reaches no
+# one; this runs before detaching. Loads System.Speech only for a named voice.
+function Assert-Voice([hashtable] $o, [string] $lang) {
+    $want = Get-VoiceRequest $o $lang
+    if (-not $want) { return }
+    $installed = @()
+    try {
+        Add-Type -AssemblyName System.Speech
+        $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+        try { $installed = @($s.GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo }) }
+        finally { $s.Dispose() }
+    } catch { Die "cannot load System.Speech: $($_.Exception.Message)" }
+    [void](Find-Voice $installed $want)
 }
 
 function Coalesce($a, $b) { if ($null -eq $a) { return $b } else { return $a } }
@@ -389,6 +413,30 @@ function Write-Status([hashtable] $o, [string] $line) {
     if (-not $o.Quiet) { Write-Output "nautice: $line" }
 }
 
+# Whatever can fail without playing anything is checked here: before a banner
+# shows, before anything is heard, and before --async detaches. A detached
+# child's exit code reaches no one, so a hook with a typo would otherwise lose
+# every notification without a sign. Sets $o.Text and $o.Chime.
+function Initialize-Notice([hashtable] $o) {
+    if ($o.Command -ceq 'play') {
+        if ($o.Rest.Count -eq 0) { Die 'need a sound name or path (nautice list sounds)' }
+        # A sound has no text to put in a banner.
+        if ($o.Channel -cne 'sound') { Die 'play has no text for a banner (use --channel sound)' }
+        $o.Chime = Resolve-Sfx $o.Rest[0]
+        return
+    }
+    if ($o.Command -ceq 'call') {
+        # Keep it short: it is spoken twice.
+        $o.Text = ($o.Rest -join ' ').Trim()
+        if (-not $o.Text) { $o.Text = $CallMessage }
+    } else {
+        # Here and not in the detached child, which gets no stdin.
+        $o.Text = Read-Text $o
+    }
+    if ($o.Command -cne 'say') { $o.Chime = Resolve-Sfx $(if ($o.Tone) { $o.Tone } else { 'ask' }) }
+    if ($o.Async -and -not $o.Plan -and $o.Channel -cne 'visual') { Assert-Voice $o (Resolve-Lang $o $o.Text) }
+}
+
 function Read-Text([hashtable] $o) {
     $text = ($o.Rest -join ' ').Trim()
     if (-not $text -and -not [Console]::IsInputRedirected) { Die 'nothing to say' }
@@ -405,11 +453,13 @@ function Read-Text([hashtable] $o) {
 
 # ── Commands ────────────────────────────────────────────────────────────────
 function Invoke-Say([hashtable] $o) {
-    $text = Read-Text $o
+    $text = $o.Text
     if ($o.Plan) { Write-Plan $o 'say' '' $text; return }
+    # The voice is checked before the banner shows.
+    $synth = $null
+    if ($o.Channel -cne 'visual') { $synth = New-Synth $o $text (Resolve-Lang $o $text) }
     $banner = New-Banner $o $text
-    if ($o.Channel -ceq 'visual') { Write-Status $o 'say banner only'; Close-Banner $banner; return }
-    $synth = New-Synth $o $text (Resolve-Lang $o $text)
+    if (-not $synth) { Write-Status $o 'say banner only'; Close-Banner $banner; return }
     try {
         Write-Status $o "say x$($o.Repeat) [$($synth.Voice.Name)]$(Get-ChanNote $o)"
         Invoke-Emit $o '' $synth $text
@@ -417,29 +467,24 @@ function Invoke-Say([hashtable] $o) {
 }
 
 function Invoke-Play([hashtable] $o) {
-    if ($o.Rest.Count -eq 0) { Die 'need a sound name or path (nautice list sounds)' }
-    # A sound has no text to put in a banner.
-    if ($o.Channel -cne 'sound') { Die 'play has no text for a banner (use --channel sound)' }
-    # Resolve before planning: an unknown sound fails under --plan too, as in bash.
-    $file = Resolve-Sfx $o.Rest[0]
     if ($o.Plan) { Write-Plan $o 'play' $o.Rest[0] ''; return }
     Write-Status $o "play x$($o.Repeat) [$($o.Rest[0])]"
-    Invoke-Emit $o $file $null ''
+    Invoke-Emit $o $o.Chime $null ''
 }
 
 function Invoke-Alert([hashtable] $o) {
     if (-not $o.PlanName) { $o.PlanName = 'alert' }
-    $text = Read-Text $o
+    $text = $o.Text
     $tone = if ($o.Tone) { $o.Tone } else { 'ask' }
-    # Before the banner and the plan: an unknown tone exits 1 wherever it appears.
-    $chime = Resolve-Sfx $tone
     if ($o.Plan) { Write-Plan $o $o.PlanName $tone $text; return }
+    # The voice is checked before the banner shows.
+    $synth = $null
+    if ($o.Channel -cne 'visual') { $synth = New-Synth $o $text (Resolve-Lang $o $text) }
     $banner = New-Banner $o $text
-    if ($o.Channel -ceq 'visual') { Write-Status $o "$($o.PlanName) banner only"; Close-Banner $banner; return }
-    $synth = New-Synth $o $text (Resolve-Lang $o $text)
+    if (-not $synth) { Write-Status $o "$($o.PlanName) banner only"; Close-Banner $banner; return }
     try {
         Write-Status $o "alert x$($o.Repeat) [$($synth.Voice.Name)]$(Get-ChanNote $o)"
-        Invoke-Emit $o $chime $synth $text
+        Invoke-Emit $o $o.Chime $synth $text
     } finally { $synth.Dispose(); Close-Banner $banner }
 }
 
@@ -447,7 +492,6 @@ function Invoke-Call([hashtable] $o) {
     # Calling a human: once is easy to miss, so twice unless --repeat is given.
     if (-not $o.RepeatGiven) { $o.Repeat = 2 }
     $o.PlanName = 'call'
-    if ($o.Rest.Count -eq 0) { $o.Rest = @($CallMessage) }
     Invoke-Alert $o
 }
 
@@ -616,14 +660,26 @@ $Preroll = 0.0
 if (@('say', 'play', 'alert', 'call') -contains $o.Command) {
     $Preroll = ConvertTo-Num $Defaults.Preroll 'NAUTICE_PREROLL'
     Assert-Range $Preroll 0 2 'NAUTICE_PREROLL'
+    Initialize-Notice $o
 }
 
-# Hooks must not block the agent. Arguments are validated before detaching, so
+# Hooks must not block the agent. Initialize-Notice has checked the input, so
 # bad input still fails here with exit 1.
 # --plan prints instead of playing; a detached child would print it nowhere.
 if ($o.Async -and -not $o.Plan -and @('say', 'play', 'alert', 'call') -contains $o.Command) {
-    $passthru = @($args | Where-Object { $_ -cne '-a' -and $_ -cne '--async' })
-    $cmdline = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-q') + $passthru |
+    # Rebuilt from what was parsed: the text may have come from stdin, which
+    # the child does not get.
+    $child = @($o.Command)
+    if ($o.Voice)          { $child += @('--voice', $o.Voice) }
+    if ($null -ne $o.Vol)  { $child += @('--vol',  [string]$o.Vol) }
+    if ($null -ne $o.Rate) { $child += @('--rate', [string]$o.Rate) }
+    if ($o.Tone)           { $child += @('--tone', $o.Tone) }
+    $child += @('--channel', $o.Channel, '--lang', $o.Lang)
+    if ($o.Hold)           { $child += '--hold' }
+    if ($o.RepeatGiven)    { $child += @('--repeat', [string]$o.Repeat) }
+    $child += @('--gap', [string]$o.Gap, '--quiet', '--')
+    $child += $(if ($o.Command -ceq 'play') { $o.Rest[0] } else { $o.Text })
+    $cmdline = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath) + $child |
                 ForEach-Object { Format-CmdArg $_ }) -join ' '
     Start-Process -FilePath 'powershell' -WindowStyle Hidden -ArgumentList $cmdline
     exit 0

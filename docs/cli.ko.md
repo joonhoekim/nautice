@@ -110,12 +110,13 @@ finished` 는 같은 문자다. 그래서 OS 로캘(`LANG`·`LC_MESSAGES`, Windo
 |---|---|
 | 배너 백엔드(아래 표), 또는 그것이 실패 | `both` 면 소리 |
 | TTS 엔진 | `alert` / `call` 은 효과음, `both` 면 배너도. `both` 인 `say` 는 배너 |
+| 오디오 플레이어 (Linux: `pw-play`, `paplay`, `aplay`, `ffplay`, `mpv`) | `both` 면 배너 |
 
 TTS 엔진이란 그 언어의 TTS 명령("TTS 명령" 참고), 내장 엔진(`say`,
 `espeak-ng`, 또는 `NAUTICE_PIPER_MODEL` 을 주고 piper 가 설치돼 있을 때의
 `piper`), Windows 에서는 보이스가 하나 이상 있는 `System.Speech` 다. 남는 것이
-없으면 — 배너 백엔드 없는 `visual`, TTS 엔진 없는 `sound` 채널의 `say` —
-아무것도 하기 전에 1 로 죽는다. `--async` 는 이 판단을 떼어내기 전에 하므로
+없으면 — 배너 백엔드 없는 `visual`, 플레이어 없는 `sound` 채널, 그 채널에서
+TTS 엔진 없는 `say` — 아무것도 하기 전에 1 로 죽는다. `--async` 는 이 판단을 떼어내기 전에 하므로
 경고와 종료 코드가 똑같고, 자식은 남은 것만 받는다.
 
 **배너는 `--repeat` 을 따르지 않는다.** 몇 번을 반복하든 한 번만 띄운다 — 같은

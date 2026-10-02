@@ -503,6 +503,21 @@ if (( have_bash )); then
   sleep 0.5
   if (( rc == 1 )) && [[ ! -e $c/played.wav ]]; then ok "no TTS, say --async: exits 1 before detaching"
   else bad "no TTS, say --async" "exit $rc"; fi
+  # No audio player: the PATH has a TTS command but none of the players.
+  err=$(NAUTICE_CACHE=$c/cache PATH=$c/nb:$c/min NAUTICE_TTS_CMD=true "$BASH_IMPL" -q say -a "fresh text" 2>&1 >/dev/null); rc=$?
+  if [[ $(uname -s) != Linux ]]; then :
+  elif (( rc == 1 )) && [[ $err == *"no audio player"* ]]; then ok "no player, say --async: exits 1 before detaching"
+  else bad "no player, say --async" "exit $rc, stderr '$err'"; fi
+  NAUTICE_CACHE=$c/cache PATH=$c/min "$BASH_IMPL" -q play -a ok >/dev/null 2>&1; rc=$?
+  if [[ $(uname -s) != Linux ]]; then :
+  elif (( rc == 1 )); then ok "no player, play --async: exits 1 before detaching"
+  else bad "no player, play --async" "exit $rc"; fi
+  rm -f "$c/banner.txt"
+  err=$(NAUTICE_CACHE=$c/cache PATH=$c/nb:$c/min NAUTICE_TTS_CMD=true "$BASH_IMPL" -q call -a -c both 2>&1 >/dev/null); rc=$?
+  wait_for "$c/banner.txt"
+  if [[ $(uname -s) != Linux ]]; then :
+  elif (( rc == 1 )) && [[ $err == *"banner only"* && -s $c/banner.txt ]]; then ok "no player, call --async -c both: banner, exit 1"
+  else bad "no player, call --async -c both" "exit $rc, stderr '$err'"; fi
   # A model without the piper binary is no engine either; the child would die.
   err=$(NAUTICE_PIPER_MODEL=/nonexistent.onnx notts say -a "fresh text" 2>&1 >/dev/null); rc=$?
   if (( rc == 1 )) && [[ $err == *piper* ]]; then ok "piper model without piper: --async exits 1"

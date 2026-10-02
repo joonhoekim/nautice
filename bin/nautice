@@ -161,6 +161,11 @@ banner_failed() {
   printf 'nautice: %s; sound only\n' "$1" >&2
   DEGRADED=1 CHANNEL=sound
 }
+sound_failed() {
+  [[ $CHANNEL == both ]] || die "$1"
+  printf 'nautice: %s; banner only\n' "$1" >&2
+  DEGRADED=1 CHANNEL=visual
+}
 speech_failed() {
   local cmd=$1 why=$2 left
   if [[ $cmd != say ]]; then
@@ -655,6 +660,13 @@ speech_voice() {
 # The plan's voice: empty when none resolves, as for a voice named on another OS.
 plan_voice() { ( resolve_voice "$(resolve_lang "$TEXT")" ) 2>/dev/null || true; }
 
+# audio_play would die only at playback: in a detached child, unseen, and in
+# the foreground after the speech was rendered and the status line printed.
+player_check() {
+  [[ $PLATFORM == linux ]] || return 0
+  linux_player >/dev/null || sound_failed "no audio player (need pw-play, paplay, aplay, ffplay or mpv)"
+}
+
 # ── Preparation ─────────────────────────────────────────────────────────────
 # Whatever can fail without playing anything is checked here: before a banner
 # shows, before anything is heard, and before --async detaches. A detached
@@ -669,6 +681,7 @@ prepare() {
       # A sound has no text to put in a banner.
       [[ $CHANNEL == sound ]] || die "play has no text for a banner (use --channel sound)"
       CHIME=$(sfx_resolve "$1") || exit 1
+      [[ $OPT_PLAN == 1 ]] || player_check
       return 0 ;;
     call)
       # Keep it short: it is spoken twice, and a long one makes a call exceed 10 s.
@@ -685,6 +698,8 @@ prepare() {
   if [[ $CHANNEL != sound ]] && ! command -v "$(visual_backend)" >/dev/null 2>&1; then
     banner_failed "$(visual_backend) not found (needed for the visual channel)"
   fi
+  [[ $CHANNEL == visual ]] && return 0
+  player_check
   [[ $CHANNEL == visual ]] && return 0
   SPEECH_LANG=$(resolve_lang "$TEXT")
   local why; why=$(speech_missing "$SPEECH_LANG")

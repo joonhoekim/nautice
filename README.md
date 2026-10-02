@@ -26,7 +26,7 @@ options, one `--channel` to choose.
 
 | | `say`/`afplay`, `espeak-ng`, SAPI directly | `nautice` |
 |---|---|---|
-| Volume | `say` and `espeak-ng` have no option | `-V 0.4`, same unit on every OS |
+| Volume | a unit per tool (`espeak-ng -a` 0–200, SAPI 0–100), none in `say` | `-V 0.4`, same unit on every OS |
 | Speed | wpm / −10…10 / wpm | `-r 1.5` multiplier, converted per backend |
 | Concurrent calls | overlap into mush | serialised with a lock (bash side) |
 | Repeated phrases | re-synthesised every time | hash-keyed cache (bash side) |

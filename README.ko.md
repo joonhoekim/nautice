@@ -27,7 +27,7 @@ nautice say -c visual "빌드 끝"       # 배너만
 
 | | `say`·`afplay` / `espeak-ng` / SAPI 직접 | `nautice` |
 |---|---|---|
-| 볼륨 | `say`·`espeak-ng` 에 옵션 없음 | `-V 0.4`, 세 OS 같은 단위 |
+| 볼륨 | 도구마다 단위가 다름 (`espeak-ng -a` 0–200, SAPI 0–100), `say` 엔 없음 | `-V 0.4`, 세 OS 같은 단위 |
 | 속도 | wpm / −10–10 / wpm 제각각 | `-r 1.5` 배속, 구현이 환산 |
 | 동시 호출 | 섞여서 뭉개짐 | 락으로 직렬화 (bash 쪽) |
 | 반복 문장 | 매번 재합성 | 해시 캐시 (bash 쪽) |

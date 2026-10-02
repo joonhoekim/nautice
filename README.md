@@ -231,7 +231,8 @@ this project.**
 - `-q` suppresses the status line — use it in hooks too.
 - **Always give `say` and `alert` their text.** Without one they read stdin, and
   a hook's stdin is the event's JSON — `nautice say -a -q` would read it aloud.
-  `call` is safe: it has a default text.
+  Reading it also means `-a` returns only once stdin is closed. `call` is safe:
+  it has a default text and never reads stdin.
 - On Windows, call `nautice.cmd` instead of `nautice`.
 
 ## Things to consider

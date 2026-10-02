@@ -25,7 +25,8 @@
 - `-q` 는 상태 줄을 찍지 않는다. 훅의 출력이 로그로 가므로 보통 같이 쓴다.
 - **`say` 와 `alert` 에는 문구를 꼭 준다.** 문구가 없으면 stdin 을 읽는데, 훅의
   stdin 은 이벤트 JSON 이다 — `nautice say -a -q` 는 그 JSON 을 소리 내어 읽는다.
-  `call` 은 기본 문구가 있어 괜찮다.
+  stdin 을 읽으니 `-a` 도 stdin 이 닫혀야 돌아온다. `call` 은 기본 문구가 있고
+  stdin 을 읽지 않아 괜찮다.
 - Windows 에서는 `nautice` 대신 `nautice.cmd` 로 적는다.
 - 자리를 비울 때가 많으면 `-c both --hold` 를 붙인다. 배너가 사람이 지울
   때까지 남아서 돌아와서 볼 수 있다.

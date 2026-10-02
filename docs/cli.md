@@ -267,7 +267,9 @@ child:
 - options and their ranges, including `NAUTICE_PREROLL`;
 - the text — `say` and `alert` read stdin before detaching and hand the text
   to the child, so empty input is "nothing to say". Any length gets through on
-  macOS and Linux; for Windows see "Platform differences";
+  macOS and Linux; for Windows see "Platform differences". So with no text
+  argument, `--async` returns only once stdin is closed: hooks close it, but a
+  caller that keeps the pipe open is held for as long;
 - sound names, and `play` with a banner channel;
 - the voice, when it is named (`--voice`, `NAUTICE_VOICE`, `NAUTICE_VOICE_<LANG>`)
   and the built-in engine speaks the language;

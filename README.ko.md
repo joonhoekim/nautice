@@ -228,7 +228,8 @@ https://github.com/joonhoekim/nautice 의 설치 한 줄을 내가 먼저 돌려
 - `-q` 는 상태 줄을 안 찍는다 — 훅에서는 같이 쓴다.
 - **`say` 와 `alert` 에는 문구를 꼭 준다.** 문구가 없으면 stdin 을 읽는데, 훅의
   stdin 은 이벤트 JSON 이다 — `nautice say -a -q` 는 그 JSON 을 소리 내어 읽는다.
-  `call` 은 기본 문구가 있어 괜찮다.
+  stdin 을 읽으니 `-a` 도 stdin 이 닫혀야 돌아온다. `call` 은 기본 문구가 있고
+  stdin 을 읽지 않아 괜찮다.
 - Windows 에서는 `nautice` 대신 `nautice.cmd` 로 적는다.
 
 ## 고를 때 참고할 것

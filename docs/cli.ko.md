@@ -255,7 +255,8 @@ bash 쪽은 렌더한 음성과 보이스 해석 결과(보이스 표, 언어별
 - 옵션과 그 범위. `NAUTICE_PREROLL` 도 포함
 - 문구 — `say` 와 `alert` 는 떼어내기 전에 stdin 을 읽어 자식에게 문구로 넘긴다.
   입력이 비었으면 "nothing to say". macOS·Linux 에서는 길이에 상관없이 넘어간다.
-  Windows 는 "플랫폼 차이" 참고
+  Windows 는 "플랫폼 차이" 참고. 그래서 문구 인자가 없으면 `--async` 는 stdin 이
+  닫혀야 돌아온다. 훅은 닫아 주지만, 파이프를 열어 둔 호출자는 그동안 붙잡힌다
 - 사운드 이름, 그리고 배너 채널을 준 `play`
 - 이름으로 지정한 보이스(`--voice`, `NAUTICE_VOICE`, `NAUTICE_VOICE_<LANG>`) —
   그 언어를 내장 엔진이 읽을 때

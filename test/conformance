@@ -203,6 +203,8 @@ reject_case 'unknown tone'     alert -t NoSuchTone x
 reject_case 'unknown tone --plan' alert --plan -t NoSuchTone x
 reject_case 'unknown tone, banner only' alert -c visual -t NoSuchTone x
 reject_case 'unknown tone in call' call --plan -t NoSuchTone
+reject_case 'unknown tone on say'  say --plan -t NoSuchTone x
+reject_case 'unknown tone on play' play --plan -t NoSuchTone ok
 reject_case 'unknown channel'  say -c bogus x
 reject_case 'unknown language' say -l xyz x
 reject_case 'missing -l value' say -l

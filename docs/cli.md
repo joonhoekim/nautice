@@ -256,9 +256,9 @@ Other values are tried as a path, then as an OS sound
 
 An unknown sound exits 1 before a banner shows or anything is heard, and also
 under `--plan` and `--channel visual`: a mistyped `--tone` is a mistake
-wherever it appears. So does a named voice that does not exist: unlike a
-missing engine (see "Channels"), it is a mistake in the command, not in the
-machine.
+wherever it appears, even on `say` and `play`, which do not use it. A named
+voice that does not exist exits 1 before the banner too: unlike a missing
+engine (see "Channels"), it is a mistake in the command, not in the machine.
 
 `--async` detaches only after everything that can be checked without playing,
 so bad input still exits 1 right away instead of vanishing with the detached

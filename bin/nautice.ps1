@@ -464,6 +464,8 @@ function Write-Status([hashtable] $o, [string] $line) {
 # child's exit code reaches no one, so a hook with a typo would otherwise lose
 # every notification without a sign. Sets $o.Text and $o.Chime.
 function Initialize-Notice([hashtable] $o) {
+    # say and play do not use --tone, but a typo there is still a typo.
+    if ($o.Tone) { [void](Resolve-Sfx $o.Tone) }
     if ($o.Command -ceq 'play') {
         if ($o.Rest.Count -eq 0) { Die 'need a sound name or path (nautice list sounds)' }
         # A sound has no text to put in a banner.

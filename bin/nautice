@@ -674,7 +674,9 @@ player_check() {
 # every notification without a sign. Sets TEXT, CHIME, SPEECH_LANG and VOICE.
 TEXT='' CHIME='' SPEECH_LANG='' VOICE=''
 prepare() {
-  local cmd=$1; shift
+  local cmd=$1 tone; shift
+  # say and play do not use --tone, but a typo there is still a typo.
+  if [[ -n $OPT_TONE ]]; then tone=$(sfx_resolve "$OPT_TONE") || exit 1; fi
   case $cmd in
     play)
       [[ $# -gt 0 && -n ${1:-} ]] || die "need a sound name or path (nautice list sounds)"

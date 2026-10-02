@@ -419,6 +419,15 @@ STUB
   if (( rc == 0 )) && [[ $(cat "$c/in.txt" 2>/dev/null) == "build done" && -s $c/played.wav ]]
   then ok "--async: stdin reaches the child, voice left to the command"
   else bad "--async stdin" "exit $rc, stdin '$(cat "$c/in.txt" 2>/dev/null)'"; fi
+  # Linux caps one argument at 128 KiB; text over it once vanished with exit 0.
+  rm -f "$c/in.txt"
+  head -c 140000 /dev/zero | tr '\0' a | NAUTICE_TTS_CMD=$cmd tts -a say >/dev/null 2>&1; rc=$?
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    [[ -s $c/in.txt ]] && break; sleep 0.25
+  done
+  got=$(tr -d '\n' < "$c/in.txt" 2>/dev/null | wc -c | tr -d ' ')
+  if (( rc == 0 )) && [[ $got == 140000 ]]; then ok "--async: 140 KB of stdin reaches the child whole"
+  else bad "--async long stdin" "exit $rc, child got ${got:-nothing}"; fi
 
   if [[ $(uname -s) == Linux ]]; then
     for bad_cmd in 'exit 3' 'true' ; do
@@ -540,6 +549,14 @@ if (( have_bash )); then
   rm -rf "$c"
 else
   printf '  \033[33mskip\033[0m %s (%s)\n' "missing backends" "$SKIP_WHY"
+fi
+# Windows caps the child's command line; longer text must exit 1, not vanish.
+# Without System.Speech (pwsh off Windows) call degrades to its chime and
+# still reaches the check.
+if (( have_ps )); then
+  msg=$(run_ps call -a "$(head -c 40000 /dev/zero | tr '\0' a)" 2>&1 | grep -v 'no speech' | head -1); rc=${PIPESTATUS[0]}
+  if (( rc == 1 )) && [[ $msg == *"too long"* ]]; then ok "ps --async: text over the command-line cap exits 1"
+  else bad "ps --async long text" "exit $rc, '$msg'"; fi
 fi
 # pwsh off Windows has no Windows Forms: the same rule on the ps1 side.
 if (( have_ps )) && [[ $PWSH != powershell ]] && [[ $(uname -s) != MINGW* && $(uname -s) != MSYS* && $(uname -s) != CYGWIN* ]]; then

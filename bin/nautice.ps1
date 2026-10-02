@@ -736,7 +736,11 @@ if ($o.Async -and -not $o.Plan -and @('say', 'play', 'alert', 'call') -contains 
     $child += $(if ($o.Command -ceq 'play') { $o.Rest[0] } else { $o.Text })
     $cmdline = (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath) + $child |
                 ForEach-Object { Format-CmdArg $_ }) -join ' '
-    Start-Process -FilePath 'powershell' -WindowStyle Hidden -ArgumentList $cmdline
+    # CreateProcess caps the whole command line at 32767 characters, and the
+    # text rides on it. The margin leaves room for powershell's own path.
+    if ($cmdline.Length -gt 32000) { Die 'text too long for --async (the command line is capped at 32767 characters)' }
+    try { Start-Process -FilePath 'powershell' -WindowStyle Hidden -ArgumentList $cmdline }
+    catch { Die "cannot start the --async child: $($_.Exception.Message)" }
     if ($o.Degraded) { exit 1 }
     exit 0
 }

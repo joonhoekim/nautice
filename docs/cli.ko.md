@@ -254,7 +254,8 @@ bash 쪽은 렌더한 음성과 보이스 해석 결과(보이스 표, 언어별
 
 - 옵션과 그 범위. `NAUTICE_PREROLL` 도 포함
 - 문구 — `say` 와 `alert` 는 떼어내기 전에 stdin 을 읽어 자식에게 문구로 넘긴다.
-  입력이 비었으면 "nothing to say"
+  입력이 비었으면 "nothing to say". macOS·Linux 에서는 길이에 상관없이 넘어간다.
+  Windows 는 "플랫폼 차이" 참고
 - 사운드 이름, 그리고 배너 채널을 준 `play`
 - 이름으로 지정한 보이스(`--voice`, `NAUTICE_VOICE`, `NAUTICE_VOICE_<LANG>`) —
   그 언어를 내장 엔진이 읽을 때
@@ -318,6 +319,9 @@ macOS·Linux 에서는 배너 자체를 떼어내기 전에 띄운다. 그래서
   `-a` 로 떼어내므로 이 차이가 보이지 않는다. 같은 이유로 Windows 의 `--async`
   는 배너를 떼어낸 자식에게 맡기고, macOS·Linux 는 떼어내기 전에 띄운다. 그래서
   Windows 에서 실패한 벌룬은 알려지지 않는다.
+- **Windows 의 `--async` 문구 길이** — 자식은 문구를 명령줄로 받는데, Windows 는
+  명령줄을 32767자로 제한한다. 그보다 긴 문구는 떼어내기 전에 1 로 죽는다.
+  macOS·Linux 는 stdin 으로 넘기므로 제한이 없다.
 - **Windows 배너는 데스크톱 세션이 필요하다** — 서비스나 헤드리스 세션에서는
   트레이가 없어 벌룬이 뜨지 않는다.
 - **`--hold` 가 지키는 정도가 OS 마다 다르다** — Windows 만 보장한다.

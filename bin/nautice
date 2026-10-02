@@ -1005,7 +1005,13 @@ detach() {
   [[ $OPT_HOLD == 1 ]] && args+=(--hold)
   [[ $REPEAT_GIVEN == 1 ]] && args+=(--repeat "$OPT_REPEAT")
   args+=(--gap "$OPT_GAP" --quiet --)
-  nohup "$0" "${args[@]}" "$@" >/dev/null 2>&1 &
+  # say and alert get the text on stdin: Linux caps one argument at 128 KiB
+  # (MAX_ARG_STRLEN), and nohup failing with E2BIG here was never seen.
+  if [[ ${args[0]} == say || ${args[0]} == alert ]]; then
+    nohup "$0" "${args[@]}" <<<"$TEXT" >/dev/null 2>&1 &
+  else
+    nohup "$0" "${args[@]}" "$@" >/dev/null 2>&1 &
+  fi
   disown 2>/dev/null || true
 }
 
@@ -1025,7 +1031,11 @@ case $cmd in
         CHANNEL=sound
       fi
       # The child gets the text read here, so stdin it cannot read is not lost.
-      if [[ $cmd == play ]]; then detach play "$1"; else detach "$cmd" "$TEXT"; fi
+      case $cmd in
+        play) detach play "$1" ;;
+        call) detach call "$@" ;;
+        *)    detach "$cmd" ;;
+      esac
       exit "$DEGRADED"
     fi
     cache_prune "$VERSION"

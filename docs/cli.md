@@ -266,7 +266,8 @@ child:
 
 - options and their ranges, including `NAUTICE_PREROLL`;
 - the text — `say` and `alert` read stdin before detaching and hand the text
-  to the child, so empty input is "nothing to say";
+  to the child, so empty input is "nothing to say". Any length gets through on
+  macOS and Linux; for Windows see "Platform differences";
 - sound names, and `play` with a banner channel;
 - the voice, when it is named (`--voice`, `NAUTICE_VOICE`, `NAUTICE_VOICE_<LANG>`)
   and the built-in engine speaks the language;
@@ -335,6 +336,9 @@ Backend limits, not bugs. The conformance test allows exactly these.
   detach with `-a`, so the difference is invisible there. For the same reason
   `--async` on Windows leaves the banner to the detached child, while macOS and
   Linux show it before detaching; a balloon that fails there goes unreported.
+- **`--async` text length on Windows** — the child gets the text on its
+  command line, which Windows caps at 32767 characters; longer text exits 1
+  before detaching. macOS and Linux hand it over on stdin, without a limit.
 - **Windows banners need a desktop session** — services and headless sessions
   have no tray, so no balloon appears.
 - **How well `--hold` holds differs per OS** — only Windows guarantees it.

@@ -180,7 +180,8 @@ home.sessionVariables.NAUTICE_TTS_CMD_KO = pkgs.writeShellScript "nautice-tts-ko
 
 `nautice doctor` lists the commands it sees, and `nautice say --plan "…"` prints
 the one used as `backend_tts`. Details in [`docs/cli.md`](docs/cli.md) under
-"TTS command".
+"TTS command". Running a model of your own on a CPU, GPU or NPU, with the voice
+you pick: [`docs/local-voices.md`](docs/local-voices.md).
 
 ## Wiring it to an agent
 
@@ -308,6 +309,7 @@ tools/mkdist              builds release assets (standard library only)
 docs/cli.md               behaviour contract — the single source of truth
 docs/install.md           install contract — the single source of truth
 docs/agent-setup.md       wiring nautice to an agent
+docs/local-voices.md      your own TTS model and voice, offline
 test/conformance          checks both implementations keep the contract
 ```
 

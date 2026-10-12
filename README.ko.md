@@ -180,7 +180,8 @@ home.sessionVariables.NAUTICE_TTS_CMD_KO = pkgs.writeShellScript "nautice-tts-ko
 
 `nautice doctor` 가 보이는 명령을 나열하고, `nautice say --plan "…"` 은 쓰일
 명령을 `backend_tts` 로 찍는다. 자세한 것은 [`docs/cli.ko.md`](docs/cli.ko.md) 의
-"TTS 명령".
+"TTS 명령". 직접 고른 모델과 보이스를 CPU · GPU · NPU 로 돌리는 법은
+[`docs/local-voices.ko.md`](docs/local-voices.ko.md).
 
 ## 에이전트에 물리기
 
@@ -302,6 +303,7 @@ tools/mkdist              릴리스 자산을 만든다 (표준 라이브러리�
 docs/cli.md               동작 계약 — 단일 출처
 docs/install.md           설치 계약 — 단일 출처
 docs/agent-setup.md       에이전트에 물리는 법
+docs/local-voices.md      직접 고른 TTS 모델과 보이스, 오프라인
 test/conformance          두 구현이 계약을 똑같이 지키는지 본다
 ```
 

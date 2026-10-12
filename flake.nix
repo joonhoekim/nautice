@@ -22,7 +22,7 @@
         in rec {
           nautice = stdenv.mkDerivation {
             pname = "nautice";
-            version = "0.4.4";
+            version = "0.4.5";
             src = ./.;
 
             nativeBuildInputs = [ pkgs.makeWrapper ];

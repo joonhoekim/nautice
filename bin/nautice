@@ -458,10 +458,20 @@ is_wav() { [[ -s $1 && $(head -c 4 "$1") == RIFF && $(head -c 12 "$1" | tail -c 
 # a WAV written to $NAUTICE_TTS_OUT. Returns 1 when it fails, times out or
 # writes no WAV, and the caller falls back to the built-in engine — a cloud
 # engine gone offline must not cost the notification.
+# The voice named for the language (--voice, NAUTICE_VOICE, NAUTICE_VOICE_<LANG>),
+# passed as is: only the command knows its voices. Empty for auto and best.
+cmd_voice() {
+  local v=${OPT_VOICE:-$NAUTICE_VOICE}
+  [[ $v == auto ]] && v=$(lang_env NAUTICE_VOICE_ "$1")
+  [[ $v == best ]] && v=
+  printf '%s' "$v"
+}
+
 tts_cmd_render() {
-  local var=$1 lang=$2 rate=$3 text=$4 cmd key path tmp rc=0 why
+  local var=$1 lang=$2 rate=$3 text=$4 cmd voice key path tmp rc=0 why
   eval "cmd=\$$var"
-  key=$(printf 'cmd|%s|%s|%s|%s' "$cmd" "$lang" "$rate" "$text" | hash_stdin | cut -d' ' -f1)
+  voice=$(cmd_voice "$lang")
+  key=$(printf 'cmd|%s|%s|%s|%s|%s' "$cmd" "$lang" "$rate" "$voice" "$text" | hash_stdin | cut -d' ' -f1)
   path="$CACHE_DIR/$key.wav"
   [[ -s $path ]] && { printf '%s' "$path"; return 0; }
   mkdir -p "$CACHE_DIR"
@@ -471,7 +481,7 @@ tts_cmd_render() {
   command -v timeout >/dev/null 2>&1 && run=(timeout "$TTS_CMD_TIMEOUT" "${run[@]}")
   # A here-string, not printf |: a command that never reads stdin would kill
   # printf with SIGPIPE, and pipefail would call that a failure.
-  NAUTICE_TTS_OUT=$tmp NAUTICE_TTS_LANG=$lang NAUTICE_TTS_RATE=$rate \
+  NAUTICE_TTS_OUT=$tmp NAUTICE_TTS_LANG=$lang NAUTICE_TTS_RATE=$rate NAUTICE_TTS_VOICE=$voice \
     "${run[@]}" <<<"$text" >/dev/null 2>"$tmp.err" || rc=$?
   if (( rc == 0 )) && is_wav "$tmp"; then
     mv -f "$tmp" "$path"; rm -f "$tmp.err"

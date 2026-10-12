@@ -183,18 +183,20 @@ The command runs under `sh -c` and gets:
 | `NAUTICE_TTS_OUT` | Path of the WAV file to write |
 | `NAUTICE_TTS_LANG` | The resolved language (`ko`, `en`, …) |
 | `NAUTICE_TTS_RATE` | `--rate` as given, a multiplier; converting it is up to the command |
+| `NAUTICE_TTS_VOICE` | The voice named for the language (`--voice`, `NAUTICE_VOICE`, `NAUTICE_VOICE_<LANG>`) as given; empty for `auto` and `best` |
 
 It must write a WAV (RIFF/WAVE) to `NAUTICE_TTS_OUT` and exit 0. nautice adds
 the lead-in, applies `--vol` at playback and caches the file like any other
-rendering — keyed by the command, language, rate and text, so editing the
-command renders anew.
+rendering — keyed by the command, language, rate, voice and text, so editing
+the command renders anew.
 
 **A failing command does not fail the notification.** A non-zero exit, no WAV,
 or no exit within 15 s (where `timeout` exists) prints a warning on stderr and
 the built-in engine speaks instead: a cloud engine gone offline must not cost
-the notification. `--voice` applies to the built-in engine only: where a
-command speaks the language, an unknown voice is not an error, and should the
-command fail, the built-in engine picks a voice as for `best`.
+the notification. nautice does not check the voice against a command: where
+a command speaks the language, `--voice` is passed in `NAUTICE_TTS_VOICE` and
+the command decides what it means (an unknown one may fail the command); should
+the command fail, the built-in engine picks a voice as for `best`.
 
 `--plan` prints the engine as `backend_tts`: the variable's name
 (`NAUTICE_TTS_CMD_KO`) when a command applies, otherwise `say`, `piper`,

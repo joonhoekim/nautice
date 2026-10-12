@@ -137,7 +137,8 @@ synthesis. A better engine can be plugged in per language — see below.
 
 `NAUTICE_TTS_CMD_<LANG>` sets a shell command for one language and
 `NAUTICE_TTS_CMD` one for every other language. The command reads the text on
-stdin and writes a WAV to `$NAUTICE_TTS_OUT`; `$NAUTICE_TTS_RATE` holds `--rate`.
+stdin and writes a WAV to `$NAUTICE_TTS_OUT`; `$NAUTICE_TTS_RATE` holds `--rate`
+and `$NAUTICE_TTS_VOICE` the voice named with `--voice` or `NAUTICE_VOICE_<LANG>`.
 If it fails — offline, say — the built-in engine speaks instead. Renders are
 cached, so a repeated message does not run the command again. Nothing below is
 bundled or required; copy what you want.

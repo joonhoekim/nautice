@@ -396,17 +396,25 @@ STUB
   else bad "built-in engine" "backend_tts '$got'"; fi
 
   # shellcheck disable=SC2016  # expanded by the command's sh, not here
-  cmd='cat > "'$c'/in.txt"; echo "$NAUTICE_TTS_LANG $NAUTICE_TTS_RATE" > "'$c'/env.txt"
+  cmd='cat > "'$c'/in.txt"; echo "$NAUTICE_TTS_LANG $NAUTICE_TTS_RATE $NAUTICE_TTS_VOICE" > "'$c'/env.txt"
        echo run >> "'$c'/runs"; cp share/sounds/ok.wav "$NAUTICE_TTS_OUT"'
   NAUTICE_TTS_CMD_KO=$cmd tts -q say -r 1.5 "빌드 끝" >/dev/null
   if [[ $(hash_file "$c/played.wav" 2>/dev/null) == "$(hash_file share/sounds/ok.wav)" ]]
   then ok "the command's WAV is played"; else bad "command WAV" "the player got something else"; fi
-  if [[ $(cat "$c/in.txt" 2>/dev/null) == "빌드 끝" && $(cat "$c/env.txt" 2>/dev/null) == "ko 1.5" ]]
+  if [[ $(cat "$c/in.txt" 2>/dev/null) == "빌드 끝" && $(cat "$c/env.txt" 2>/dev/null) == "ko 1.5 " ]]
   then ok "text on stdin, language and rate in the environment"
   else bad "command input" "stdin '$(cat "$c/in.txt" 2>/dev/null)', env '$(cat "$c/env.txt" 2>/dev/null)'"; fi
   NAUTICE_TTS_CMD_KO=$cmd tts -q say -r 1.5 "빌드 끝" >/dev/null
   if [[ $(wc -l < "$c/runs") -eq 1 ]]; then ok "a cached render does not run the command again"
   else bad "command cache" "ran $(wc -l < "$c/runs") times"; fi
+  NAUTICE_TTS_CMD_KO=$cmd NAUTICE_VOICE_KO=M2 tts -q say -r 1.5 "빌드 끝" >/dev/null
+  if [[ $(cat "$c/env.txt" 2>/dev/null) == "ko 1.5 M2" && $(wc -l < "$c/runs") -eq 2 ]]
+  then ok "the voice named for the language reaches the command and the cache key"
+  else bad "command voice" "env '$(cat "$c/env.txt" 2>/dev/null)', ran $(wc -l < "$c/runs") times"; fi
+  NAUTICE_TTS_CMD_KO=$cmd NAUTICE_VOICE_KO=M2 tts -q -v best say -r 1.5 "빌드 끝" >/dev/null
+  # No voice: the same key as the first render, so the cache answers.
+  if [[ $(wc -l < "$c/runs") -eq 2 ]]; then ok "--voice best passes no voice"
+  else bad "command voice best" "ran $(wc -l < "$c/runs") times"; fi
 
   # --voice is for the built-in engine: unknown there, ignored where a command
   # speaks. The detached child gets no stdin, so the text must be read first.

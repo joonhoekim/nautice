@@ -137,7 +137,8 @@ nix profile remove nautice                         # 지우기
 
 `NAUTICE_TTS_CMD_<언어>` 는 한 언어의, `NAUTICE_TTS_CMD` 는 나머지 모든 언어의
 셸 명령이다. 명령은 stdin 으로 텍스트를 받아 `$NAUTICE_TTS_OUT` 에 WAV 를 쓴다.
-`$NAUTICE_TTS_RATE` 에는 `--rate` 가 들어 있다. 명령이 실패하면(오프라인 등) 내장
+`$NAUTICE_TTS_RATE` 에는 `--rate` 가,
+`$NAUTICE_TTS_VOICE` 에는 `--voice` 나 `NAUTICE_VOICE_<언어>` 로 지정한 보이스가 들어 있다. 명령이 실패하면(오프라인 등) 내장
 엔진이 대신 읽는다. 렌더는 캐시되므로 같은 문구는 명령을 다시 돌리지 않는다.
 아래 어느 것도 번들되거나 필수가 아니다. 필요한 것만 복사해 쓰면 된다.
 
